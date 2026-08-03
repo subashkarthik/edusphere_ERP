@@ -88,7 +88,7 @@ scheduler.add_job(run_legacy_sync_job, 'interval', minutes=30) # Sync legacy DBs
 async def lifespan(app):
     Base.metadata.create_all(bind=engine)
     
-    # Auto-seed database if empty/outdated (e.g. fresh Render deployment)
+    # Auto-seed database if empty/outdated asynchronously (non-blocking for fast Gunicorn startup)
     try:
         from database import SessionLocal
         from models.user import User
@@ -97,11 +97,11 @@ async def lifespan(app):
         user_count = db.query(User).count()
         db.close()
         if user_count < 50:
-            print("[LIFESPAN] Seeding full production-scale institutional dataset (300+ Students, 40+ Faculty, 120+ Courses)...")
-            generate_production_data()
-            print("[LIFESPAN] Production database auto-seeded successfully!")
+            print("[LIFESPAN] Database user count low. Launching production data seeder asynchronously...")
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(None, generate_production_data)
     except Exception as se:
-        print(f"[LIFESPAN SEED WARNING] Auto-seed check/population failed: {se}")
+        print(f"[LIFESPAN SEED WARNING] Auto-seed check failed: {se}")
 
     # Initialize Redis for WebSockets
     from utils.websocket_manager import manager

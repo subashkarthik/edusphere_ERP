@@ -362,21 +362,20 @@ def generate_production_data():
         db.flush()
         print(f"  ✓ [7/12] {tt_count} Weekly Timetable Slots generated (Mon-Fri, Semesters 1-8)")
 
-        # 9. Daily Attendance History (30,000+ Logs across past 60 days)
-        print("  ⏳ Generating 30,000+ Daily Attendance Logs over 60 academic days...")
-        start_date = date.today() - timedelta(days=90)
+        # 9. Daily Attendance History (Realistic Institutional Sample)
+        print("  ⏳ Generating Daily Attendance Logs...")
+        start_date = date.today() - timedelta(days=30)
         curr_date = start_date
         academic_days = []
-        while len(academic_days) < 60:
+        while len(academic_days) < 15:
             if curr_date.weekday() < 5: # Mon-Fri
                 academic_days.append(curr_date)
             curr_date += timedelta(days=1)
 
         attendance_log_count = 0
         session_count = 0
-        primary_courses = courses_list[:15]
+        primary_courses = courses_list[:8]
 
-        # Use bulk operations for maximum insertion speed
         log_dicts = []
 
         for a_day in academic_days:
@@ -393,8 +392,8 @@ def generate_production_data():
                 )
                 db.add(sess)
 
-                # Generate logs for first 150 students for each session
-                for std in student_list[:150]:
+                # Generate logs for first 30 students for each session
+                for std in student_list[:30]:
                     attendance_log_count += 1
                     rand_val = random.random()
                     if rand_val < 0.88:
