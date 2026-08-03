@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { GraduationCap } from 'lucide-react';
 
 interface LogoProps {
   className?: string;
@@ -13,6 +14,8 @@ const Logo: React.FC<LogoProps> = ({
   variant = 'full',
   theme = 'glass'
 }) => {
+  const [imgError, setImgError] = useState(false);
+
   return (
     <div className={`flex items-center gap-4 ${className} select-none`}>
       <div 
@@ -20,22 +23,26 @@ const Logo: React.FC<LogoProps> = ({
         style={{ width: size, height: size }}
       >
         {/* Glow effect for high-end look */}
-        <div className="absolute inset-0 bg-indigo-500/10 rounded-full blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
+        <div className="absolute inset-0 bg-indigo-500/20 rounded-2xl blur-lg opacity-80 transition-opacity" />
         
-        <img 
-          src="/EduSphere_Logo.png" 
-          alt="EduSphere" 
-          loading="eager"
-          decoding="async"
-          className={`
-            w-full h-full object-contain transition-all duration-700
-            ${theme === 'glass' ? 'brightness-125 contrast-125 saturate-50' : ''}
-            drop-shadow-[0_4px_12px_rgba(0,0,0,0.3)]
-          `}
-          style={{
-            filter: theme === 'glass' ? 'drop-shadow(0 0 10px rgba(99, 102, 241, 0.3)) brightness(1.2)' : 'none'
-          }}
-        />
+        {!imgError ? (
+          <img 
+            src="/EduSphere_Logo.png" 
+            alt="EduSphere" 
+            loading="eager"
+            decoding="async"
+            onError={() => setImgError(true)}
+            className={`
+              w-full h-full object-contain transition-all duration-500 relative z-10
+              ${theme === 'glass' ? 'brightness-125 contrast-125' : ''}
+              drop-shadow-[0_4px_12px_rgba(99,102,241,0.4)]
+            `}
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-2xl border border-indigo-400/40 flex items-center justify-center shadow-lg relative z-10">
+            <GraduationCap size={size * 0.55} className="text-white drop-shadow-md" />
+          </div>
+        )}
       </div>
 
       {variant !== 'icon-only' && (

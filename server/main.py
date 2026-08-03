@@ -284,6 +284,13 @@ def spa_fallback(request: Request, full_path: str):
     if full_path.startswith("api"):
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="API endpoint not found")
+    
+    # Check if requested file exists directly in dist_path (e.g. /EduSphere_Logo.png, /manifest.json)
+    if full_path:
+        file_in_dist = os.path.join(dist_path, full_path)
+        if os.path.exists(file_in_dist) and os.path.isfile(file_in_dist):
+            return FileResponse(file_in_dist)
+
     if os.path.exists(index_file):
         return FileResponse(index_file)
     return {
