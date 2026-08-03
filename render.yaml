@@ -18,6 +18,6 @@ services:
 databases:
   - name: edusphere-postgres-db
     databaseName: edusphere
-    user: postgres
+    user: edusphere_user
     region: singapore
     plan: free
