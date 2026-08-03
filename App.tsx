@@ -36,6 +36,8 @@ import DegreeAuditView from './views/DegreeAuditView';
 import VoiceVivaModule from './views/VoiceVivaModule';
 import VirtualLab3DView from './views/VirtualLab3DView';
 import SkillQuestView from './views/SkillQuestView';
+import PublicCatalog from './views/PublicCatalog';
+import CertificateVerification from './views/CertificateVerification';
 import { Login } from './components/Login';
 
 
@@ -239,6 +241,13 @@ const App: React.FC = () => {
   };
 
   if (showSplash) return <SplashScreen />;
+
+  if (window.location.pathname.startsWith('/verify-certificate')) {
+    return <CertificateVerification />;
+  }
+  if (window.location.pathname.startsWith('/public-catalog')) {
+    return <PublicCatalog />;
+  }
 
   if (!isLoggedIn) {
     return (

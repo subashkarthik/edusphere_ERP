@@ -196,6 +196,9 @@ app.include_router(placements_router)
 app.include_router(certificates_router)
 app.include_router(upload_router)
 
+from routes.public import router as public_router
+app.include_router(public_router)
+
 from fastapi import WebSocket, WebSocketDisconnect
 from utils.websocket_manager import manager
 
