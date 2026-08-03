@@ -92,6 +92,7 @@ def _seed_all(db: Session):
         id="user-arun", org_id="org-edusphere", email="arun.kumar@edusphere.edu.in",
         password_hash=hash_password("faculty123"), name="Dr. Arun Kumar",
         role=UserRole.FACULTY, department_id="dept-cse", designation="HoD",
+        enrollment_no="FAC/2026/001",
         avatar="https://picsum.photos/seed/arun/200/200",
     )
     faculty_devi = User(
@@ -116,7 +117,7 @@ def _seed_all(db: Session):
         id="user-alex", org_id="org-edusphere", email="alex.j@edusphere.edu.in",
         password_hash=hash_password("student123"), name="Alex Johnson",
         role=UserRole.STUDENT, department_id="dept-cse",
-        enrollment_no="UNI/2021/CS/042",
+        enrollment_no="UNI/2021/CS/001",
         avatar="https://ui-avatars.com/api/?name=Alex+Johnson&background=4f46e5&color=fff",
     )
     student_priya = User(

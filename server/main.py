@@ -88,6 +88,22 @@ scheduler.add_job(run_legacy_sync_job, 'interval', minutes=30) # Sync legacy DBs
 async def lifespan(app):
     Base.metadata.create_all(bind=engine)
     
+    # Auto-seed database if empty (e.g. fresh Render deployment)
+    try:
+        from database import SessionLocal
+        from models.user import User
+        from utils.seed import _seed_all
+        db = SessionLocal()
+        user_count = db.query(User).count()
+        if user_count == 0:
+            print("[LIFESPAN] Database is empty. Seeding initial institutional demo data...")
+            _seed_all(db)
+            db.commit()
+            print("[LIFESPAN] Database auto-seeded successfully!")
+        db.close()
+    except Exception as se:
+        print(f"[LIFESPAN SEED WARNING] Auto-seed check/population failed: {se}")
+
     # Initialize Redis for WebSockets
     from utils.websocket_manager import manager
     await manager.initialize_redis()
