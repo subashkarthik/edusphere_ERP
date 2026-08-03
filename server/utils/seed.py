@@ -33,34 +33,10 @@ from utils.password import hash_password
 
 
 def seed_database():
-    """Drop all tables, recreate, and seed with demo data."""
-    print("🗄️  Dropping existing tables...")
-    Base.metadata.drop_all(bind=engine)
-    print("🏗️  Creating tables...")
-    Base.metadata.create_all(bind=engine)
+    """Seed database with enterprise production scale institutional data."""
+    from utils.production_seeder import generate_production_data
+    generate_production_data()
 
-    db = SessionLocal()
-    try:
-        _seed_all(db)
-        db.commit()
-        print(" ✅ Database seeded successfully!")
-        print("=" * 50)
-        print("🔑 Student Credentials:")
-        print("   Email:    alex.j@edusphere.edu.in")
-        print("   Key:      student123")
-        print("🔑 Faculty Credentials:")
-        print("   Email:    arun.kumar@edusphere.edu.in")
-        print("   Key:      faculty123")
-        print("🔑 Admin Credentials:")
-        print("   Email:    admin@edusphere.edu.in")
-        print("   Key:      admin123")
-        print("=" * 50)
-    except Exception as e:
-        db.rollback()
-        print(f"❌ Seeding failed: {e}")
-        raise
-    finally:
-        db.close()
 
 
 def _seed_all(db: Session):
