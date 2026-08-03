@@ -11,8 +11,11 @@ export function useSocket(userId: string, orgId: string = 'org-edusphere') {
   useEffect(() => {
     if (!userId) return;
 
-    const host = window.location.hostname || 'localhost';
-    const wsUrl = `ws://${host}:5000/ws/${orgId}/${userId}`;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = (window.location.port === '3000' || window.location.port === '5173')
+      ? `${window.location.hostname}:5000`
+      : window.location.host;
+    const wsUrl = `${protocol}//${host}/ws/${orgId}/${userId}`;
     
     let isSubscribed = true;
 

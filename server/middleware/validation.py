@@ -10,8 +10,20 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; media-src 'self' http://localhost:5000 http://127.0.0.1:5000 blob: data:; connect-src 'self' http://localhost:5000 http://127.0.0.1:5000;"
+        
+        csp_directives = [
+            "default-src 'self' data: blob: https: http:",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com blob: data:",
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com",
+            "font-src 'self' data: https://fonts.gstatic.com",
+            "img-src 'self' blob: data: https: http: https://res.cloudinary.com",
+            "media-src 'self' blob: data: https: http: https://res.cloudinary.com",
+            "connect-src 'self' ws: wss: http: https: http://localhost:5000 http://127.0.0.1:5000",
+            "worker-src 'self' blob: data:"
+        ]
+        response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
         return response
+
 
 class InputValidationMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
