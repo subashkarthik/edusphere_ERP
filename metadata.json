@@ -1,8 +1,8 @@
 {
-  "name": "UniVerse — Universal University ERP System",
+  "name": "EduSphere — Universal University LMS System",
   "version": "4.0.0",
   "description": "Enterprise-grade academic management platform for modern universities. Full-stack React + FastAPI with MS Access hybrid database.",
-  "author": "UniVerse ERP",
+  "author": "EduSphere LMS",
   "license": "MIT",
-  "keywords": ["university", "erp", "academic", "management", "attendance", "finance"]
+  "keywords": ["university", "lms", "academic", "management", "attendance", "education"]
 }

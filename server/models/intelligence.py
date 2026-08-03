@@ -9,6 +9,7 @@ class LearningMetric(Base):
     __tablename__ = "learning_metrics"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     
     # Computed scores
@@ -16,6 +17,10 @@ class LearningMetric(Base):
     attendance_score: Mapped[float] = mapped_column(Float, default=0.0)
     assessment_score: Mapped[float] = mapped_column(Float, default=0.0)
     activity_score: Mapped[float] = mapped_column(Float, default=0.0)
+    
+    # New Fields
+    gpa_proxy: Mapped[float] = mapped_column(Float, default=0.0)
+    velocity_json: Mapped[str | None] = mapped_column(Text, nullable=True) # Week-wise scores
     
     # Risk assessment
     risk_level: Mapped[str] = mapped_column(String(20), default="NORMAL")  # NORMAL, WARNING, CRITICAL
@@ -31,6 +36,7 @@ class Recommendation(Base):
     __tablename__ = "recommendations"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     
     type: Mapped[str] = mapped_column(String(50))  # REVISE, PRACTICE, ATTEND, EXPLORE
@@ -50,6 +56,7 @@ class UserNotification(Base):
     __tablename__ = "user_notifications"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     
     title: Mapped[str] = mapped_column(String(255))
@@ -61,3 +68,22 @@ class UserNotification(Base):
 
     # Relationships
     user = relationship("User", back_populates="user_notifications")
+
+class StudyTask(Base):
+    """AI Generated Study Tasks for the planner."""
+    __tablename__ = "study_tasks"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    
+    title: Mapped[str] = mapped_column(String(255))
+    duration: Mapped[str] = mapped_column(String(50))
+    priority: Mapped[str] = mapped_column(String(20)) # HIGH, URGENT, MEDIUM, LOW
+    type: Mapped[str] = mapped_column(String(50)) # REVISION, PROJECT, VIDEO, ASSIGNMENT
+    completed: Mapped[bool] = mapped_column(Boolean, default=False)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="study_tasks")

@@ -37,3 +37,21 @@ def mark_notification_read(notif_id: str, current_user: User = Depends(get_curre
         notif.is_read = True
         db.commit()
     return {"status": "success"}
+
+@router.get("/tasks")
+def get_tasks(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get AI Study Planner tasks."""
+    from models.intelligence import StudyTask
+    return db.query(StudyTask).filter(StudyTask.user_id == current_user.id).order_by(StudyTask.created_at.asc()).all()
+
+@router.post("/tasks/{task_id}/toggle")
+def toggle_task(task_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Toggle a study task completion status."""
+    from models.intelligence import StudyTask
+    task = db.query(StudyTask).filter(StudyTask.id == task_id, StudyTask.user_id == current_user.id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    task.completed = not task.completed
+    db.commit()
+    return task

@@ -1,11 +1,12 @@
 {
-  "name": "universe-erp",
+  "name": "edusphere-lms",
   "private": true,
   "version": "4.0.0",
   "type": "module",
-  "description": "UniVerse — Universal University ERP System. Enterprise-grade academic management platform.",
+  "description": "EduSphere — Universal University LMS System. Enterprise-grade academic management platform.",
   "scripts": {
     "dev": "vite --port 3000",
+    "start": "vite --port 3000",
     "dev:backend": "cd server && uvicorn main:app --reload --port 5000",
     "db:seed": "cd server && python -m utils.seed",
     "db:test": "cd server && python test_api.py",
@@ -13,17 +14,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react-dom": "^19.2.3",
-    "react": "^19.2.3",
     "@google/genai": "^1.34.0",
     "lucide-react": "^0.562.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
     "recharts": "^3.6.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }
 }
-

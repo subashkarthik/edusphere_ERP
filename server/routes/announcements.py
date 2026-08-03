@@ -6,6 +6,7 @@ from models.user import User, UserRole
 from models.misc import Announcement
 from schemas.schemas import AnnouncementCreate, AnnouncementResponse
 from middleware.auth import get_current_user, require_roles
+from utils.websocket_manager import manager
 
 router = APIRouter(prefix="/api/announcements", tags=["Announcements"])
 
@@ -17,6 +18,7 @@ def list_announcements(
 ):
     """List announcements targeted at the current user's role."""
     announcements = db.query(Announcement).filter(
+        Announcement.org_id == current_user.org_id,
         Announcement.target_roles.contains(current_user.role.value)
     ).order_by(Announcement.is_pinned.desc(), Announcement.published_at.desc()).limit(50).all()
 
@@ -32,13 +34,14 @@ def list_announcements(
 
 
 @router.post("/", response_model=AnnouncementResponse)
-def create_announcement(
+async def create_announcement(
     request: AnnouncementCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FACULTY])),
 ):
     """Create an announcement. Admin/Faculty only."""
     announcement = Announcement(
+        org_id=current_user.org_id,
         title=request.title,
         content=request.content,
         author_id=current_user.id,
@@ -49,9 +52,27 @@ def create_announcement(
     db.commit()
     db.refresh(announcement)
 
-    return AnnouncementResponse(
+    response_data = AnnouncementResponse(
         id=announcement.id, title=announcement.title, content=announcement.content,
         author_name=current_user.name, target_roles=announcement.target_roles,
         priority=announcement.priority.value, is_pinned=announcement.is_pinned,
         published_at=announcement.published_at,
     )
+
+    # Broadcast new announcement via WebSockets
+    await manager.broadcast_to_institution({
+        "type": "NEW_ANNOUNCEMENT",
+        "announcement": {
+            "id": response_data.id,
+            "title": response_data.title,
+            "content": response_data.content,
+            "author_name": response_data.author_name,
+            "target_roles": response_data.target_roles,
+            "priority": response_data.priority,
+            "is_pinned": response_data.is_pinned,
+            "published_at": response_data.published_at.isoformat()
+        }
+    }, current_user.org_id)
+
+    return response_data
+

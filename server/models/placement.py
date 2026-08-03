@@ -32,6 +32,7 @@ class PlacementDrive(Base):
     eligibility_criteria: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[DriveStatus] = mapped_column(SAEnum(DriveStatus), default=DriveStatus.UPCOMING)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, default="org-edusphere")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships
@@ -49,6 +50,7 @@ class PlacementApplication(Base):
     drive_id: Mapped[str] = mapped_column(String(36), ForeignKey("placement_drives.id"), nullable=False)
     status: Mapped[ApplicationStatus] = mapped_column(SAEnum(ApplicationStatus), default=ApplicationStatus.APPLIED)
     applied_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, default="org-edusphere")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
@@ -64,7 +66,8 @@ class PlacementStats(Base):
     __tablename__ = "placement_stats"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    year: Mapped[str] = mapped_column(String(4), nullable=False, unique=True)
+    year: Mapped[str] = mapped_column(String(4), nullable=False)
+    org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, default="org-edusphere")
     placed: Mapped[int] = mapped_column(Integer, nullable=False)
     total: Mapped[int] = mapped_column(Integer, nullable=False)
     avg_lpa: Mapped[float] = mapped_column(Float, nullable=False)

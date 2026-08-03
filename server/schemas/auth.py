@@ -3,7 +3,8 @@ from typing import Optional
 
 
 class LoginRequest(BaseModel):
-    email: str
+    email: Optional[str] = None
+    identifier: Optional[str] = None
     password: str
 
 
@@ -16,6 +17,7 @@ class RegisterRequest(BaseModel):
     enrollment_no: Optional[str] = None
     designation: Optional[str] = None
     phone: Optional[str] = None
+    faculty_key: Optional[str] = None
 
 
 class TokenResponse(BaseModel):

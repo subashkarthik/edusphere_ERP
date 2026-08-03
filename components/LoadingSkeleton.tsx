@@ -2,11 +2,11 @@
 import React from 'react';
 
 export const SkeletonPulse: React.FC<{ className?: string }> = ({ className = '' }) => (
-  <div className={`animate-pulse bg-slate-200 rounded-2xl ${className}`} />
+  <div className={`animate-pulse bg-white/[0.06] rounded-2xl ${className}`} />
 );
 
 export const MetricCardSkeleton: React.FC = () => (
-  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-4">
+  <div className="glass p-6 rounded-2xl flex flex-col gap-4">
     <div className="flex items-center justify-between">
       <SkeletonPulse className="w-12 h-12 rounded-xl" />
       <SkeletonPulse className="w-14 h-5" />
@@ -29,7 +29,7 @@ export const TableRowSkeleton: React.FC<{ cols?: number }> = ({ cols = 3 }) => (
 );
 
 export const CardSkeleton: React.FC = () => (
-  <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+  <div className="glass p-8 rounded-[2rem]">
     <div className="flex justify-between items-start mb-10">
       <SkeletonPulse className="w-14 h-14 rounded-2xl" />
       <SkeletonPulse className="w-16 h-5" />
@@ -56,8 +56,8 @@ export const ActivitySkeleton: React.FC = () => (
 export const FullPageLoader: React.FC = () => (
   <div className="flex items-center justify-center min-h-[400px]">
     <div className="flex flex-col items-center gap-4">
-      <div className="w-10 h-10 border-4 border-slate-200 border-t-indigo-600 rounded-full animate-spin" />
-      <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Loading data...</p>
+      <div className="w-10 h-10 border-4 border-white/[0.08] border-t-indigo-400 rounded-full animate-spin" />
+      <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">Loading data...</p>
     </div>
   </div>
 );

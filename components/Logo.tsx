@@ -3,32 +3,59 @@ import React from 'react';
 interface LogoProps {
   className?: string;
   size?: number;
+  variant?: 'full' | 'minimal' | 'icon-only';
+  theme?: 'light' | 'dark' | 'glass';
 }
 
-const Logo: React.FC<LogoProps> = ({ className = "", size = 32 }) => {
+const Logo: React.FC<LogoProps> = ({ 
+  className = "", 
+  size = 32, 
+  variant = 'full',
+  theme = 'glass'
+}) => {
   return (
-    <div className={`flex items-center gap-3 ${className}`}>
-      <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
-        <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
-          <defs>
-            <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#4f46e5" />
-              <stop offset="100%" stopColor="#6366f1" />
-            </linearGradient>
-          </defs>
-          <rect x="10" y="10" width="80" height="80" rx="24" fill="url(#logoGrad)" />
-          {/* Abstract E/S Intelligence Mark */}
-          <path d="M30 35 L70 35" stroke="white" strokeWidth="8" strokeLinecap="round" opacity="0.4" />
-          <path d="M30 50 L60 50" stroke="white" strokeWidth="8" strokeLinecap="round" />
-          <path d="M30 65 L70 65" stroke="white" strokeWidth="8" strokeLinecap="round" opacity="0.6" />
-          {/* Professional Sparkle */}
-          <path d="M75 25 L80 30 M75 30 L80 25" stroke="white" strokeWidth="2" strokeLinecap="round" />
-        </svg>
+    <div className={`flex items-center gap-4 ${className} select-none`}>
+      <div 
+        className="relative flex items-center justify-center shrink-0" 
+        style={{ width: size, height: size }}
+      >
+        {/* Glow effect for high-end look */}
+        <div className="absolute inset-0 bg-indigo-500/10 rounded-full blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
+        
+        <img 
+          src="/EduSphere_Logo.png" 
+          alt="EduSphere" 
+          loading="eager"
+          decoding="async"
+          className={`
+            w-full h-full object-contain transition-all duration-700
+            ${theme === 'glass' ? 'brightness-125 contrast-125 saturate-50' : ''}
+            drop-shadow-[0_4px_12px_rgba(0,0,0,0.3)]
+          `}
+          style={{
+            filter: theme === 'glass' ? 'drop-shadow(0 0 10px rgba(99, 102, 241, 0.3)) brightness(1.2)' : 'none'
+          }}
+        />
       </div>
-      <div className="flex flex-col">
-        <span className="text-lg font-black tracking-tight text-white leading-none">EduSpere</span>
-        <span className="text-[8px] font-black uppercase tracking-[0.3em] text-slate-500 mt-1">Intelligence LMS</span>
-      </div>
+
+      {variant !== 'icon-only' && (
+        <div className="flex flex-col">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xl md:text-2xl font-black tracking-[0.25em] text-white leading-none uppercase translate-y-[2px]">
+              Edu<span className="text-indigo-400">Sphere</span>
+            </span>
+          </div>
+          {variant === 'full' && (
+            <div className="flex items-center gap-2 mt-2">
+              <div className="h-[1px] w-4 bg-white/10"></div>
+              <span className="text-[9px] font-black uppercase tracking-[0.5em] text-slate-500 whitespace-nowrap">
+                Universal LMS
+              </span>
+              <div className="h-[1px] w-4 bg-white/10"></div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

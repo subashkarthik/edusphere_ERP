@@ -27,6 +27,7 @@ class AttendanceSession(Base):
     start_time: Mapped[str | None] = mapped_column(String(10), nullable=True)
     end_time: Mapped[str | None] = mapped_column(String(10), nullable=True)
     status: Mapped[SessionStatus] = mapped_column(SAEnum(SessionStatus), default=SessionStatus.OPEN)
+    org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, default="org-edusphere")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships
@@ -46,6 +47,7 @@ class AttendanceLog(Base):
     student_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     status: Mapped[AttendanceStatus] = mapped_column(SAEnum(AttendanceStatus), default=AttendanceStatus.PRESENT)
     marked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, default="org-edusphere")
 
     # Relationships
     session = relationship("AttendanceSession", back_populates="logs")

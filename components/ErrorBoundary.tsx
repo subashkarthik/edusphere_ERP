@@ -39,24 +39,24 @@ class ErrorBoundary extends Component<Props, State> {
       }
 
       return (
-        <div className="flex flex-col items-center justify-center p-12 md:p-20 text-center bg-white rounded-3xl border border-slate-100 shadow-sm animate-in fade-in duration-500 min-h-[400px]">
-          <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mb-8">
-            <AlertTriangle size={36} className="text-rose-500" />
+        <div className="flex flex-col items-center justify-center p-12 md:p-20 text-center glass glass-edge rounded-3xl animate-in fade-in duration-500 min-h-[400px]">
+          <div className="w-20 h-20 bg-rose-500/15 rounded-full flex items-center justify-center mb-8">
+            <AlertTriangle size={36} className="text-rose-400" />
           </div>
-          <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight mb-3">
+          <h2 className="text-2xl font-black text-slate-100 uppercase tracking-tight mb-3">
             Module Error
           </h2>
-          <p className="text-slate-500 max-w-md font-medium text-sm leading-relaxed mb-2">
+          <p className="text-slate-400 max-w-md font-medium text-sm leading-relaxed mb-2">
             An unexpected error occurred while rendering this module.
           </p>
           {this.state.error && (
-            <p className="text-[10px] text-slate-400 font-mono bg-slate-50 px-4 py-2 rounded-xl mb-8 max-w-lg truncate">
+            <p className="text-[10px] text-slate-500 font-mono glass px-4 py-2 rounded-xl mb-8 max-w-lg truncate">
               {this.state.error.message}
             </p>
           )}
           <button
             onClick={this.handleRetry}
-            className="flex items-center gap-3 px-8 py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:bg-slate-800 transition-all active:scale-95 shadow-xl shadow-black/10"
+            className="flex items-center gap-3 px-8 py-4 glass-btn-primary text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all active:scale-95"
           >
             <RefreshCw size={16} />
             Retry Module

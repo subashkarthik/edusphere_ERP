@@ -100,6 +100,8 @@ class AttendanceSummaryResponse(BaseModel):
     percentage: float
     classes_held: int
     classes_attended: int
+    status: Optional[str] = "SAFE"
+
 
 
 class AttendanceHistoryResponse(BaseModel):

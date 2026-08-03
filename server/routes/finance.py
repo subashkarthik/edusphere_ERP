@@ -4,11 +4,37 @@ from sqlalchemy import func
 from typing import List
 from database import get_db
 from models.user import User, UserRole
-from models.finance import FeeStructure, FeePayment, PaymentStatus
+from models.finance import FeeStructure, FeePayment, PaymentStatus, LedgerEntry
 from schemas.schemas import FeeResponse, PaymentCreate, FinanceReportResponse
 from middleware.auth import get_current_user, require_roles
 
 router = APIRouter(prefix="/api/finance", tags=["Finance"])
+
+
+@router.get("/ledger")
+def get_ledger(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retrieve full transactional financial ledger for student or administrative overview."""
+    if current_user.role == UserRole.STUDENT:
+        entries = db.query(LedgerEntry).filter(LedgerEntry.student_id == current_user.id).order_by(LedgerEntry.created_at.desc()).all()
+    else:
+        entries = db.query(LedgerEntry).order_by(LedgerEntry.created_at.desc()).limit(200).all()
+        
+    return [
+        {
+            "id": e.id,
+            "student_name": e.student.name if e.student else "Unknown",
+            "amount": e.amount,
+            "entry_type": e.entry_type,
+            "label": e.label,
+            "transaction_id": e.transaction_id,
+            "created_at": str(e.created_at)
+        }
+        for e in entries
+    ]
+
 
 
 @router.get("/fees", response_model=List[FeeResponse])
@@ -75,9 +101,22 @@ def make_payment(
         transaction_id=request.transaction_id or f"TXN-{current_user.id[:8]}",
     )
     db.add(payment)
+    db.flush()
+
+    # Log double-entry ledger credit (reduces student's debt)
+    ledger_entry = LedgerEntry(
+        org_id=current_user.org_id or "org-edusphere",
+        student_id=current_user.id,
+        amount=request.amount_paid,
+        entry_type="CREDIT",
+        label=f"Fee Payment: {fs.label}",
+        transaction_id=payment.transaction_id
+    )
+    db.add(ledger_entry)
     db.commit()
 
-    return {"message": f"Payment of ₹{request.amount_paid} recorded for {fs.label}"}
+    return {"message": f"Payment of ₹{request.amount_paid} recorded and logged to ledger for {fs.label}"}
+
 
 
 @router.get("/payments/history")

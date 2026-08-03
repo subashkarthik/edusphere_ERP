@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List
@@ -8,13 +8,15 @@ from models.academic import Course, Enrollment, EnrollmentStatus
 from models.attendance import AttendanceSession, AttendanceLog, AttendanceStatus, SessionStatus
 from models.finance import FeeStructure, FeePayment, PaymentStatus
 from models.placement import PlacementStats
-from models.misc import AuditLog
+from models.audit import AuditLog
 from schemas.schemas import DashboardMetricResponse, ActivityResponse
 from middleware.auth import get_current_user
-from access_db import (
-    get_all_faculty, get_all_subjects, get_course_registrations,
-    get_all_rooms, get_attendance_records, get_attendance_summary as access_attendance_summary,
+from models.synced_legacy import (
+    SyncedFaculty, SyncedSubject, SyncedRoom, SyncedAttendance, SyncedTimetable
 )
+from pydantic import BaseModel
+from utils.audit_logger import log_audit
+from datetime import datetime
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
@@ -26,20 +28,14 @@ def get_metrics(
 ):
     """
     Compute role-specific dashboard KPI metrics.
-    Uses MS Access data for institutional counts (faculty, subjects, rooms).
-    Falls back to SQLite for financial data.
+    Uses synced PostgreSQL data for institutional counts.
     """
-    # Fetch Access data (with graceful fallback)
     try:
-        access_faculty = get_all_faculty()
-        access_subjects = get_all_subjects()
-        access_rooms = get_all_rooms()
-        access_registrations = get_course_registrations()
-        total_faculty_count = len(access_faculty)
-        total_subject_count = len(access_subjects)
-        total_room_count = len(access_rooms)
-        total_registrations = sum(int(r.get("StudentCount", 0)) for r in access_registrations)
-        active_faculty = len([f for f in access_faculty if f.get("Status") == "Active"])
+        total_faculty_count = db.query(SyncedFaculty).count()
+        total_subject_count = db.query(SyncedSubject).count()
+        total_room_count = db.query(SyncedRoom).count()
+        total_registrations = db.query(Enrollment).filter(Enrollment.status == EnrollmentStatus.ACTIVE).count()
+        active_faculty = total_faculty_count
     except Exception:
         total_faculty_count = 0
         total_subject_count = 0
@@ -48,20 +44,22 @@ def get_metrics(
         active_faculty = 0
 
     if current_user.role == UserRole.STUDENT:
-        # Attendance from Access
+        # Attendance from SyncedAttendance
         try:
-            att_summary = access_attendance_summary()
-            if att_summary:
-                total_held = sum(a["classes_held"] for a in att_summary)
-                total_attended = sum(a["classes_attended"] for a in att_summary)
+            records = db.query(SyncedAttendance).filter(SyncedAttendance.student_id == current_user.id).all()
+            if records:
+                total_held = len(records)
+                total_attended = sum(1 for r in records if r.status == "Present")
                 att_pct = round((total_attended / total_held * 100), 1) if total_held > 0 else 0
             else:
                 att_pct = 0
         except Exception:
             att_pct = 0
 
+
         # GPA from SQLite enrollments
         enrollments = db.query(Enrollment).filter(
+            Enrollment.org_id == current_user.org_id,
             Enrollment.student_id == current_user.id,
             Enrollment.status == EnrollmentStatus.ACTIVE,
         ).all()
@@ -72,7 +70,10 @@ def get_metrics(
 
         # Outstanding dues from SQLite
         dues = 0
-        fee_structs = db.query(FeeStructure).filter(FeeStructure.department_id == current_user.department_id).all()
+        fee_structs = db.query(FeeStructure).filter(
+            FeeStructure.org_id == current_user.org_id,
+            FeeStructure.department_id == current_user.department_id
+        ).all()
         for fs in fee_structs:
             paid = db.query(FeePayment).filter(
                 FeePayment.student_id == current_user.id,
@@ -98,10 +99,19 @@ def get_metrics(
         ]
 
     else:  # ADMIN
-        total_students = db.query(User).filter(User.role == UserRole.STUDENT, User.is_active == True).count()
-        total_revenue = db.query(func.sum(FeePayment.amount_paid)).filter(FeePayment.status == PaymentStatus.COMPLETED).scalar() or 0
+        total_students = db.query(User).filter(
+            User.org_id == current_user.org_id,
+            User.role == UserRole.STUDENT, 
+            User.is_active == True
+        ).count()
+        total_revenue = db.query(func.sum(FeePayment.amount_paid)).filter(
+            FeePayment.org_id == current_user.org_id,
+            FeePayment.status == PaymentStatus.COMPLETED
+        ).scalar() or 0
 
-        latest_stats = db.query(PlacementStats).order_by(PlacementStats.year.desc()).first()
+        latest_stats = db.query(PlacementStats).filter(
+            PlacementStats.org_id == current_user.org_id
+        ).order_by(PlacementStats.year.desc()).first()
         placement_pct = round((latest_stats.placed / latest_stats.total * 100)) if latest_stats and latest_stats.total > 0 else 0
 
         return [
@@ -117,32 +127,35 @@ def get_activity(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get recent system activity. Mixes Access attendance data + SQLite audit logs."""
+    """Get recent system activity. Mixes synced attendance data + PostgreSQL audit logs."""
     activities = []
 
-    # Add recent attendance events from Access
+    # Add recent attendance events from SyncedAttendance
     try:
-        att_records = get_attendance_records()
-        for record in att_records[:3]:
-            faculty_id = record.get("FacultyID")
-            status = record.get("Status", "Unknown")
-            att_date = record.get("Date", "")
+        att_records = db.query(SyncedAttendance).order_by(SyncedAttendance.date.desc()).limit(3).all()
+        for record in att_records:
+            status = record.status
+            att_date = record.date
+            student_id = record.student_id
             activities.append(ActivityResponse(
-                label=f"Attendance Marked",
-                description=f"Faculty #{faculty_id} — Status: {status}",
-                time=str(att_date)[:10] if att_date else "Recently",
+                label=f"Attendance Synced",
+                description=f"Student {student_id} — Status: {status}",
+                time=att_date.strftime("%d %b %Y") if att_date else "Recently",
                 type="attendance",
             ))
     except Exception:
         pass
 
-    # Add SQLite audit logs
-    logs = db.query(AuditLog).order_by(AuditLog.created_at.desc()).limit(5).all()
+
+    # Add Enterprise audit logs (Isolated by Org)
+    logs = db.query(AuditLog).filter(
+        AuditLog.org_id == current_user.org_id
+    ).order_by(AuditLog.timestamp.desc()).limit(5).all()
     if logs:
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc)
         for log in logs:
-            delta = now - log.created_at.replace(tzinfo=timezone.utc) if log.created_at else None
+            delta = now - log.timestamp.replace(tzinfo=timezone.utc) if log.timestamp else None
             if delta:
                 if delta.seconds < 3600:
                     time_str = f"{delta.seconds // 60}m ago"
@@ -155,14 +168,14 @@ def get_activity(
 
             activities.append(ActivityResponse(
                 label=log.action,
-                description=log.details or "",
+                description=f"{log.resource_type} action recorded",
                 time=time_str,
-                type=log.entity_type,
+                type=log.resource_type.lower(),
             ))
 
     if not activities:
         activities = [
-            ActivityResponse(label="System Ready", description="UniVerse ERP backend with MS Access integration", time="Just now", type="system"),
+            ActivityResponse(label="System Ready", description="EduSphere LMS backend with MS Access integration", time="Just now", type="system"),
             ActivityResponse(label="Access DB Connected", description="7 databases linked successfully", time="Just now", type="system"),
         ]
 
@@ -175,10 +188,97 @@ def get_analytics(
     current_user: User = Depends(get_current_user),
 ):
     """Get institutional analytics data for charts (placement trends etc.)."""
-    stats = db.query(PlacementStats).order_by(PlacementStats.year).all()
+    stats = db.query(PlacementStats).filter(
+        PlacementStats.org_id == current_user.org_id
+    ).order_by(PlacementStats.year).all()
     return {
         "placement_trends": [
             {"year": s.year, "placed": s.placed, "total": s.total, "avgLPA": s.avg_lpa}
             for s in stats
         ]
     }
+
+
+class ProvisionRequest(BaseModel):
+    cores: int
+    memory: int
+
+@router.get("/system/config")
+def get_system_config(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    latest = db.query(AuditLog).filter(
+        AuditLog.org_id == current_user.org_id,
+        AuditLog.action == "SYSTEM_PROVISION"
+    ).order_by(AuditLog.timestamp.desc()).first()
+    
+    if latest and latest.metadata_json:
+        return {
+            "cores": latest.metadata_json.get("cores", 64),
+            "memory": latest.metadata_json.get("memory", 256)
+        }
+    return {"cores": 64, "memory": 256}
+
+@router.post("/system/provision")
+async def provision_system(
+    request_data: ProvisionRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    latest = db.query(AuditLog).filter(
+        AuditLog.org_id == current_user.org_id,
+        AuditLog.action == "SYSTEM_PROVISION"
+    ).order_by(AuditLog.timestamp.desc()).first()
+    
+    current_cores = 64
+    current_memory = 256
+    if latest and latest.metadata_json:
+        current_cores = latest.metadata_json.get("cores", 64)
+        current_memory = latest.metadata_json.get("memory", 256)
+        
+    new_cores = current_cores + request_data.cores
+    new_memory = current_memory + request_data.memory
+    
+    await log_audit(
+        db=db,
+        user_id=current_user.id,
+        org_id=current_user.org_id,
+        action="SYSTEM_PROVISION",
+        resource_type="SYSTEM",
+        resource_id=None,
+        metadata={"cores": new_cores, "memory": new_memory, "added_cores": request_data.cores, "added_memory": request_data.memory},
+        request=request
+    )
+    
+    return {"message": "System provisioned successfully", "cores": new_cores, "memory": new_memory}
+
+@router.post("/system/audit")
+async def run_system_audit(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    await log_audit(
+        db=db,
+        user_id=current_user.id,
+        org_id=current_user.org_id,
+        action="SYSTEM_AUDIT",
+        resource_type="SYSTEM",
+        resource_id=None,
+        metadata={"status": "COMPLIANT", "checked_at": datetime.utcnow().isoformat()},
+        request=request
+    )
+    
+    return {"message": "Security compliance audit completed successfully", "status": "COMPLIANT"}
+

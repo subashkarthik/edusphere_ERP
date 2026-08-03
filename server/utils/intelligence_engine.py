@@ -67,25 +67,41 @@ def update_student_intelligence(db: Session, student_id: str):
         risk_level = "WARNING"
 
     # 6. Update or Create LearningMetric
+    user = db.query(User).filter(User.id == student_id).first()
+    if not user: return None
+    org_id = user.org_id
+
     metric = db.query(LearningMetric).filter(LearningMetric.user_id == student_id).first()
     if not metric:
-        metric = LearningMetric(user_id=student_id)
+        metric = LearningMetric(user_id=student_id, org_id=org_id)
         db.add(metric)
     
+    import json
+    # Mock some historical velocity data based on current overall score
+    velocity = [
+        {"name": "Week 1", "score": max(overall_score - 10, 0)},
+        {"name": "Week 2", "score": max(overall_score - 5, 0)},
+        {"name": "Week 3", "score": max(overall_score - 8, 0)},
+        {"name": "Week 4", "score": max(overall_score - 2, 0)},
+        {"name": "Current", "score": overall_score},
+    ]
+
     metric.overall_score = overall_score
     metric.attendance_score = attendance_score
     metric.assessment_score = assessment_score
     metric.activity_score = activity_score
+    metric.gpa_proxy = min(9.5, (overall_score / 10) + 0.5) # Simulated GPA
+    metric.velocity_json = json.dumps(velocity)
     metric.risk_level = risk_level
     metric.prediction_summary = "; ".join(risk_summary) if risk_summary else "Learning trajectory is stable."
     
     # 7. Generate Recommendations
-    # Clear old recommendations
     db.query(Recommendation).filter(Recommendation.user_id == student_id).delete()
     
     if assessment_score < 70:
         db.add(Recommendation(
             user_id=student_id,
+            org_id=org_id,
             type="REVISE",
             priority="HIGH",
             title="Strengthen Foundations",
@@ -96,12 +112,24 @@ def update_student_intelligence(db: Session, student_id: str):
     if attendance_score < 80:
         db.add(Recommendation(
             user_id=student_id,
+            org_id=org_id,
             type="ATTEND",
             priority="URGENT",
             title="Attendance Recovery",
             message=f"Your attendance is at {attendance_score:.1f}%. Avoid missing any more classes to stay above the 75% threshold.",
             link="/attendance"
         ))
+
+    # 8. Manage Study Tasks (Planner)
+    from models.intelligence import StudyTask
+    task_count = db.query(StudyTask).filter(StudyTask.user_id == student_id).count()
+    if task_count == 0:
+        # Seed initial tasks if none exist
+        db.add_all([
+            StudyTask(user_id=student_id, org_id=org_id, title="Revise Microservices Patterns", duration="30 min", priority="HIGH", type="REVISION", completed=True),
+            StudyTask(user_id=student_id, org_id=org_id, title="Complete Cloud VPC Assignment", duration="1.5 hrs", priority="URGENT", type="PROJECT"),
+            StudyTask(user_id=student_id, org_id=org_id, title="Watch Module 4: Distributed DB", duration="45 min", priority="MEDIUM", type="VIDEO"),
+        ])
 
     db.commit()
     return metric

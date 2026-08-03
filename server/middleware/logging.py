@@ -1,65 +1,57 @@
-"""
-Structured logging middleware for UniVerse ERP API.
-
-Logs every request with method, path, status, duration, and user context.
-Uses correlation IDs for request tracing.
-"""
 import time
+import json
 import uuid
-import logging
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
-
-# Configure structured logger
-logger = logging.getLogger("universe.api")
-handler = logging.StreamHandler()
-handler.setFormatter(logging.Formatter(
-    "[%(asctime)s] %(levelname)s %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-))
-if not logger.handlers:
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-
+from starlette.responses import Response, JSONResponse
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Logs every API request with timing and correlation ID."""
-
     async def dispatch(self, request: Request, call_next):
-        correlation_id = str(uuid.uuid4())[:8]
-        start_time = time.time()
-
-        # Extract user info from auth header (if present)
-        auth_header = request.headers.get("authorization", "")
-        has_auth = bool(auth_header)
-
-        # Store correlation ID for downstream use
+        correlation_id = str(uuid.uuid4())
         request.state.correlation_id = correlation_id
-
+        
+        start_time = time.time()
+        
+        # Log request
+        print(json.dumps({
+            "event": "request_started",
+            "correlation_id": correlation_id,
+            "method": request.method,
+            "path": request.url.path,
+            "client_ip": request.client.host
+        }))
+        
         try:
             response = await call_next(request)
-            duration_ms = round((time.time() - start_time) * 1000, 1)
-
-            # Add correlation ID to response
-            response.headers["X-Correlation-ID"] = correlation_id
-
-            # Log the request
-            status = response.status_code
-            level = logging.WARNING if status >= 400 else logging.INFO
-
-            logger.log(
-                level,
-                f"[{correlation_id}] {request.method} {request.url.path} "
-                f"-> {status} ({duration_ms}ms) "
-                f"{'[AUTH]' if has_auth else '[ANON]'}"
-            )
-
-            return response
-
         except Exception as e:
-            duration_ms = round((time.time() - start_time) * 1000, 1)
-            logger.error(
-                f"[{correlation_id}] {request.method} {request.url.path} "
-                f"-> 500 ({duration_ms}ms) ERROR: {type(e).__name__}: {e}"
+            process_time = time.time() - start_time
+            print(json.dumps({
+                "event": "request_failed",
+                "correlation_id": correlation_id,
+                "error": type(e).__name__,
+                "detail": str(e),
+                "duration_ms": round(process_time * 1000, 2)
+            }))
+            
+            # Create an error response if not already handled
+            response = JSONResponse(
+                status_code=500,
+                content={
+                    "detail": "Internal Server Error",
+                    "correlation_id": correlation_id,
+                    "type": type(e).__name__
+                }
             )
-            raise
+        
+        process_time = time.time() - start_time
+        
+        # Log response
+        print(json.dumps({
+            "event": "request_finished",
+            "correlation_id": correlation_id,
+            "status_code": response.status_code,
+            "duration_ms": round(process_time * 1000, 2)
+        }))
+        
+        response.headers["X-Correlation-ID"] = correlation_id
+        return response

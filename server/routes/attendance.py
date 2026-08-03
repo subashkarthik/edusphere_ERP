@@ -9,7 +9,7 @@ from models.academic import Course, Enrollment, EnrollmentStatus
 from models.attendance import AttendanceSession, AttendanceLog, AttendanceStatus, SessionStatus
 from schemas.schemas import AttendanceSessionCreate, AttendanceMarkRequest, AttendanceSummaryResponse, AttendanceHistoryResponse
 from middleware.auth import get_current_user, require_roles
-from access_db import get_attendance_summary as access_attendance_summary
+from models.synced_legacy import SyncedAttendance, SyncedTimetable, SyncedSubject
 
 router = APIRouter(prefix="/api/attendance", tags=["Attendance"])
 
@@ -21,18 +21,61 @@ def get_attendance_summary(
 ):
     """
     Get attendance summary per course.
-    Reads from MS Access AttendanceDB, falls back to SQLite.
+    Reads from PostgreSQL synced tables, falls back to SQLite.
     """
     try:
-        # Fetch from MS Access
-        summary = access_attendance_summary()
+        # Get timetable to map SlotID -> SubjectID
+        timetable = db.query(SyncedTimetable).all()
+        slot_to_subject = {t.slot_id: t.subject_id for t in timetable}
+        
+        subjects = db.query(SyncedSubject).all()
+        subject_map = {s.id: s for s in subjects}
+        
+        # Filter attendance records
+        query = db.query(SyncedAttendance)
+        # In mock database we seeded student_id as "user-alex" for student alex
+        if current_user.role == UserRole.STUDENT:
+            query = query.filter(SyncedAttendance.student_id == current_user.id)
+            
+        records = query.all()
+        if not records:
+            raise RuntimeError("No synced attendance records found")
+            
+        subject_stats = {}
+        for r in records:
+            sub_id = slot_to_subject.get(r.slot_id)
+            if not sub_id:
+                continue
+            if sub_id not in subject_stats:
+                subj = subject_map.get(sub_id)
+                subject_stats[sub_id] = {
+                    "course_code": f"SUB-{sub_id}",
+                    "course_name": subj.name if subj else f"Subject {sub_id}",
+                    "total": 0,
+                    "present": 0
+                }
+            subject_stats[sub_id]["total"] += 1
+            if r.status == "Present":
+                subject_stats[sub_id]["present"] += 1
+                
+        summary = [
+            {
+                "course_code": v["course_code"],
+                "course_name": v["course_name"],
+                "percentage": round((v["present"] / v["total"]) * 100, 1) if v["total"] > 0 else 0,
+                "classes_held": v["total"],
+                "classes_attended": v["present"]
+            }
+            for v in subject_stats.values()
+        ]
         if summary:
             return summary
     except Exception as e:
-        print(f"[Access] Attendance fallback to SQLite: {e}")
+        print(f"[PostgreSQL] Attendance summary sync failed: {e}")
 
     # Fallback to SQLite
     return _get_attendance_sqlite(db, current_user)
+
 
 
 def _get_attendance_sqlite(db: Session, current_user: User):
@@ -56,12 +99,30 @@ def _get_attendance_sqlite(db: Session, current_user: User):
                 AttendanceLog.status.in_([AttendanceStatus.PRESENT, AttendanceStatus.LATE]),
             ).count()
             percentage = round((attended / total_sessions * 100), 1) if total_sessions > 0 else 0
+            risk_status = "SAFE" if percentage >= 75.0 else ("WARNING" if percentage >= 65.0 else "CRITICAL")
+            
+            # Dispatch Low Attendance Warning Sentinel
+            if percentage > 0 and percentage < 75.0:
+                try:
+                    from services.notification_dispatcher import dispatch_attendance_alert
+                    dispatch_attendance_alert(
+                        user_name=current_user.name,
+                        phone=current_user.phone or "9876540001",
+                        email=current_user.email,
+                        subject_name=course.name,
+                        attendance_pct=percentage,
+                        required_lectures=3
+                    )
+                except Exception as ne:
+                    print(f"[ATTENDANCE ALERT ERROR] {ne}")
+
             results.append(AttendanceSummaryResponse(
                 course_code=course.code, course_name=course.name,
                 percentage=percentage, classes_held=total_sessions,
-                classes_attended=attended,
+                classes_attended=attended, status=risk_status
             ))
         return results
+
 
     else:
         if current_user.role == UserRole.FACULTY:

@@ -11,38 +11,16 @@ from access_db import get_full_timetable
 router = APIRouter(prefix="/api/timetable", tags=["Timetable"])
 
 
+@router.get("")
 @router.get("/", response_model=None)
 def get_timetable(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Get weekly timetable from MS Access databases.
-    Joins Timetable + Time_Slots + Subject_Master + Faculty_Master + Room_Master.
-    Falls back to SQLite if Access is unavailable.
+    Get weekly timetable from the primary database.
     """
-    try:
-        # Fetch from MS Access (cross-database join done in Python)
-        entries = get_full_timetable()
-
-        # Format for frontend
-        return [
-            {
-                "id": entry["id"],
-                "day": entry["day"],
-                "time": entry["time"],
-                "course": entry["course"],
-                "venue": entry["venue"],
-                "faculty": entry["faculty"],
-                "entry_type": entry["entry_type"],
-            }
-            for entry in entries
-        ]
-
-    except Exception as e:
-        print(f"[Access] Timetable fallback to SQLite: {e}")
-        # Fallback to SQLite
-        return _get_timetable_sqlite(db, current_user)
+    return _get_timetable_sqlite(db, current_user)
 
 
 def _get_timetable_sqlite(db: Session, current_user: User):

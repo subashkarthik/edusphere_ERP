@@ -1,5 +1,7 @@
+import { LearningMetric, Recommendation, UserNotification, StudyTask } from '../types';
+
 /**
- * UniVerse ERP — API Client
+ * EduSphere LMS — API Client
  * 
  * Centralized HTTP client for communicating with the FastAPI backend.
  * Handles JWT token management, automatic refresh, and request/response interceptors.
@@ -60,6 +62,8 @@ async function apiFetch<T>(
 }
 
 async function attemptRefresh(): Promise<boolean> {
+  if (!refreshToken) return false;
+
   try {
     const res = await fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
@@ -79,7 +83,7 @@ async function attemptRefresh(): Promise<boolean> {
 
 // ---------- Auth API ----------
 export const authApi = {
-  login: (email: string, password: string) =>
+  login: (identifier: string, password: string) =>
     apiFetch<{
       access_token: string;
       refresh_token: string;
@@ -93,235 +97,242 @@ export const authApi = {
         avatar: string;
         enrollment_no: string | null;
         designation: string | null;
+        phone?: string | null;
+        org_id?: string;
       };
     }>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ identifier, email: identifier, password }),
     }),
 
-  me: () =>
-    apiFetch<{
-      id: string;
-      email: string;
-      name: string;
-      role: string;
-      department: string | null;
-      department_id: string | null;
-      avatar: string;
-      enrollment_no: string | null;
-      designation: string | null;
-      phone: string | null;
-      is_active: boolean;
-    }>('/auth/me'),
-
-  logout: () => apiFetch('/auth/logout', { method: 'POST' }),
-};
-
-// ---------- Dashboard API ----------
-export const dashboardApi = {
-  metrics: () =>
-    apiFetch<Array<{
-      label: string;
-      value: string;
-      change: string;
-      trend: string;
-    }>>('/dashboard/metrics'),
-
-  activity: () =>
-    apiFetch<Array<{
-      label: string;
-      description: string;
-      time: string;
-      type: string;
-    }>>('/dashboard/activity'),
-
-  analytics: () =>
-    apiFetch<{
-      placement_trends: Array<{
-        year: string;
-        placed: number;
-        total: number;
-        avgLPA: number;
-      }>;
-    }>('/dashboard/analytics'),
-};
-
-// ---------- Courses API ----------
-export const coursesApi = {
-  list: () =>
-    apiFetch<Array<{
-      id: string;
-      code: string;
-      name: string;
-      credits: number;
-      faculty_name: string | null;
-      schedule: string | null;
-      enrolled_count: number;
-      progress: number;
-    }>>('/courses/'),
-
-  get: (id: string) => apiFetch(`/courses/${id}`),
-
-  materials: (courseId: string) =>
-    apiFetch<Array<{
-      id: string;
-      title: string;
-      file_type: string;
-      file_size: string;
-      uploaded_at: string;
-      uploaded_by_name: string | null;
-    }>>(`/courses/${courseId}/materials`),
-};
-
-// ---------- Attendance API ----------
-export const attendanceApi = {
-  summary: () =>
-    apiFetch<Array<{
-      course_code: string;
-      course_name: string;
-      percentage: number;
-      classes_held: number;
-      classes_attended: number;
-    }>>('/attendance/summary'),
-
-  history: (courseId: string) =>
-    apiFetch<Array<{
-      date: string;
-      status: string;
-      time: string;
-      faculty: string;
-    }>>(`/attendance/history/${courseId}`),
-
-  createSession: (data: { course_id: string; session_date: string }) =>
-    apiFetch('/attendance/sessions', { method: 'POST', body: JSON.stringify(data) }),
-
-  markAttendance: (sessionId: string, marks: Array<{ student_id: string; status: string }>) =>
-    apiFetch(`/attendance/sessions/${sessionId}/mark`, {
+  registerPublic: (data: any) =>
+    apiFetch<any>('/auth/register-public', {
       method: 'POST',
-      body: JSON.stringify({ marks }),
+      body: JSON.stringify(data),
     }),
-};
 
-// ---------- Exams API ----------
-export const examsApi = {
-  schedules: () => apiFetch('/exams/schedules/'),
-  results: () => apiFetch('/exams/results/'),
-  transcripts: () =>
-    apiFetch<Array<{
-      semester: string;
-      courses: Array<{
-        course_name: string;
-        grade: string;
-        credits: number;
-      }>;
-      sgpa: number;
-    }>>('/exams/transcripts/'),
-};
-
-// ---------- Finance API ----------
-export const financeApi = {
-  fees: () =>
-    apiFetch<Array<{
-      id: string;
-      label: string;
-      amount: number;
-      due_date: string;
-      status: string;
-      payment_date: string | null;
-      semester_label: string;
-    }>>('/finance/fees'),
-
-  outstanding: () =>
-    apiFetch<{
-      total_due: number;
-      total_paid: number;
-      outstanding: number;
-    }>('/finance/outstanding'),
-
-  makePayment: (data: { fee_structure_id: string; amount_paid: number }) =>
-    apiFetch('/finance/payments', { method: 'POST', body: JSON.stringify(data) }),
-
-  history: () => apiFetch('/finance/payments/history'),
-};
-
-// ---------- Placements API ----------
-export const placementsApi = {
-  drives: () =>
-    apiFetch<Array<{
-      id: string;
-      company_name: string;
-      role_offered: string;
-      package_lpa: number;
-      drive_date: string;
-      status: string;
-      application_status: string | null;
-    }>>('/placements/drives/'),
-
-  stats: () =>
-    apiFetch<Array<{
-      year: string;
-      placed: number;
-      total: number;
-      avg_lpa: number;
-    }>>('/placements/stats/'),
-
-  apply: (driveId: string) =>
-    apiFetch(`/placements/drives/${driveId}/apply`, { method: 'POST' }),
-};
-
-// ---------- Timetable API ----------
-export const timetableApi = {
-  list: () =>
-    apiFetch<Array<{
-      id: string;
-      day: string;
-      time: string;
-      course: string;
-      venue: string;
-      faculty: string | null;
-      entry_type: string;
-    }>>('/timetable/'),
-};
-
-// ---------- Announcements API ----------
-export const announcementsApi = {
-  list: () =>
-    apiFetch<Array<{
-      id: string;
-      title: string;
-      content: string;
-      author_name: string;
-      priority: string;
-      is_pinned: boolean;
-      published_at: string;
-    }>>('/announcements/'),
-
-  create: (data: { title: string; content: string; target_roles?: string; priority?: string }) =>
-    apiFetch('/announcements', { method: 'POST', body: JSON.stringify(data) }),
-};
-
-// ---------- AI API ----------
-export const aiApi = {
-  chat: (message: string) =>
-    apiFetch<{ response: string }>('/ai/chat', {
+  register: (data: any) =>
+    apiFetch<any>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ message }),
+      body: JSON.stringify(data),
     }),
+
+  getMe: () => apiFetch<any>('/auth/me'),
+
+  logout: () => apiFetch<any>('/auth/logout', { method: 'POST' }),
 };
 
 // ---------- Intelligence API ----------
 export const intelligenceApi = {
   metrics: () => apiFetch<LearningMetric>('/intelligence/metrics'),
   recommendations: () => apiFetch<Recommendation[]>('/intelligence/recommendations'),
-  notifications: () => apiFetch<UserNotification[]>('/intelligence/notifications'),
-  markRead: (id: string) => apiFetch(`/intelligence/notifications/${id}/read`, { method: 'POST' }),
+  getNotifications: () => apiFetch<UserNotification[]>('/intelligence/notifications'),
+  markAsRead: (id: string) => apiFetch<any>(`/intelligence/notifications/${id}/read`, { method: 'POST' }),
+  tasks: () => apiFetch<StudyTask[]>('/intelligence/tasks'),
+  toggleTask: (id: string) => apiFetch<StudyTask>(`/intelligence/tasks/${id}/toggle`, { method: 'POST' }),
+};
+
+// ---------- Attendance API ----------
+export const attendanceApi = {
+  summary: () => apiFetch<any[]>('/attendance/summary'),
+  getHistory: () => apiFetch<any[]>('/attendance/history'),
+  markAttendance: (data: any) => apiFetch<any>('/attendance/mark', { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// ---------- Subjects & Curriculum API ----------
+export const subjectApi = {
+  getSubjects: () => apiFetch<any[]>('/subjects/'),
+  getCurriculum: (subjectId: string) => apiFetch<any[]>(`/subjects/${subjectId}/curriculum`),
+};
+
+export const coursesApi = {
+  list: () => apiFetch<any[]>('/courses/'),
+  materials: (id: string) => apiFetch<any[]>(`/courses/${id}/materials`),
+};
+
+// ---------- Exams & Results API ----------
+export const examApi = {
+  getSchedules: () => apiFetch<any[]>('/exams/schedules'),
+  getResults: () => apiFetch<any[]>('/exams/results'),
+  getQuizzes: () => apiFetch<any[]>('/exams/quizzes'),
+  getQuizDetails: (id: string) => apiFetch<any>(`/exams/quizzes/${id}`),
+  submitQuiz: (id: string, answers: Record<string, string>, tab_switch_violations: number = 0) =>
+    apiFetch<any>(`/exams/quizzes/${id}/submit`, {
+      method: 'POST',
+      body: JSON.stringify({ answers, tab_switch_violations }),
+    }),
+  createQuiz: (data: any) =>
+    apiFetch<any>('/exams/quizzes', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+};
+
+export const examsApi = {
+  schedules: () => apiFetch<any[]>('/exams/schedules'),
+  transcripts: () => apiFetch<any[]>('/exams/transcripts'),
+  quizzes: () => apiFetch<any[]>('/exams/quizzes'),
+};
+
+export const uploadApi = {
+  uploadFile: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const token = getAccessToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/upload/file', {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Upload failed' }));
+      throw new Error(err.detail || 'Upload failed');
+    }
+    return res.json();
+  },
+};
+
+// ---------- Timetable API ----------
+export const timetableApi = {
+  list: () => apiFetch<any[]>('/timetable/'),
+};
+
+// ---------- Finance API ----------
+export const financeApi = {
+  getLedger: () => apiFetch<any[]>('/finance/ledger'),
+  getFees: () => apiFetch<any[]>('/finance/fees'),
+  makePayment: (data: any) => apiFetch<any>('/finance/payments', { method: 'POST', body: JSON.stringify(data) }),
+  getOutstanding: () => apiFetch<any>('/finance/outstanding'),
+};
+
+// ---------- Placement API ----------
+export const placementApi = {
+  getStats: () => apiFetch<any>('/placements/stats'),
+  getDrives: () => apiFetch<any[]>('/placements/drives'),
+  apply: (driveId: string) => apiFetch<any>(`/placements/drives/${driveId}/apply`, { method: 'POST' }),
+};
+
+
+// ---------- CMS API ----------
+export const cmsApi = {
+  getInventory: () => apiFetch<any[]>('/cms/my-inventory'),
+  createCourse: (data: any) =>
+    apiFetch<any>('/cms/courses', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateCourse: (id: string, data: any) =>
+    apiFetch<any>(`/cms/courses/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteCourse: (id: string) =>
+    apiFetch<any>(`/cms/courses/${id}`, {
+      method: 'DELETE',
+    }),
+  getCurriculum: (courseId: string) =>
+    apiFetch<any[]>(`/cms/courses/${courseId}/curriculum`),
+  addModule: (courseId: string, data: any) =>
+    apiFetch<any>(`/cms/courses/${courseId}/modules`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  addLesson: (moduleId: string, data: any) =>
+    apiFetch<any>(`/cms/modules/${moduleId}/lessons`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  bulkEnroll: (courseId: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetch(`${API_BASE}/cms/courses/${courseId}/bulk-enroll`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${getAccessToken()}`,
+      },
+      body: formData,
+    }).then(res => res.json());
+  },
+  submitCourse: (id: string) =>
+    apiFetch<any>(`/cms/courses/${id}/submit`, {
+      method: 'POST',
+    }),
+  approveCourse: (id: string) =>
+    apiFetch<any>(`/cms/courses/${id}/approve`, {
+      method: 'POST',
+    }),
+  rejectCourse: (id: string, remarks: string) =>
+    apiFetch<any>(`/cms/courses/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ remarks }),
+    })
+};
+
+
+// ---------- Library API ----------
+export const libraryApi = {
+  getBooks: () => apiFetch<any[]>('/library/'),
+  issueBook: (bookId: string) => apiFetch<any>(`/library/issue/${bookId}`, { method: 'POST' }),
+  returnBook: (bookId: string) => apiFetch<any>(`/library/return/${bookId}`, { method: 'POST' }),
+};
+
+// ---------- Announcements API ----------
+export const announcementsApi = {
+  list: () => apiFetch<any[]>('/announcements/'),
+  create: (data: any) => apiFetch<any>('/announcements/', { method: 'POST', body: JSON.stringify(data) }),
 };
 
 // ---------- Users API ----------
 export const usersApi = {
-  list: (params?: { role?: string; search?: string }) => {
-    const query = new URLSearchParams(params as Record<string, string>).toString();
-    return apiFetch(`/users${query ? `?${query}` : ''}`);
-  },
-  get: (id: string) => apiFetch(`/users/${id}`),
+  list: (role?: string) => apiFetch<any[]>(role ? `/users/?role=${role}` : '/users/'),
+  delete: (id: string) => apiFetch<any>(`/users/${id}`, { method: 'DELETE' }),
+  update: (id: string, data: any) => apiFetch<any>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  changePassword: (data: any) => apiFetch<any>('/users/change-password', { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// ---------- Assignments API ----------
+export const assignmentsApi = {
+  list: () => apiFetch<any[]>('/assignments/'),
+  submit: (assignmentId: string, fileUrl: string) => 
+    apiFetch<any>('/assignments/submit', {
+      method: 'POST',
+      body: JSON.stringify({ assignment_id: assignmentId, file_url: fileUrl })
+    }),
+  create: (data: any) => apiFetch<any>('/assignments/', { method: 'POST', body: JSON.stringify(data) }),
+  listSubmissions: () => apiFetch<any[]>('/assignments/submissions'),
+  gradeSubmission: (id: string, data: any) => apiFetch<any>(`/assignments/submissions/${id}/grade`, { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// ---------- System API ----------
+export const systemApi = {
+  dbHealth: () => apiFetch<any>('/health/db'),
+  health: () => apiFetch<any>('/health'),
+  getConfig: () => apiFetch<any>('/dashboard/system/config'),
+  provision: (data: any) => apiFetch<any>('/dashboard/system/provision', { method: 'POST', body: JSON.stringify(data) }),
+  runAudit: () => apiFetch<any>('/dashboard/system/audit', { method: 'POST' }),
+};
+
+// ---------- Dashboard API ----------
+export const dashboardApi = {
+  getMetrics: () => apiFetch<any[]>('/dashboard/metrics'),
+  getActivity: () => apiFetch<any[]>('/dashboard/activity'),
+  getAnalytics: () => apiFetch<any>('/dashboard/analytics'),
+};
+
+// ---------- Workspace API ----------
+export const workspaceApi = {
+  getModules: (courseId: string) => apiFetch<any[]>(`/workspace/course/${courseId}/modules`),
+  getLessons: (moduleId: string) => apiFetch<any[]>(`/workspace/module/${moduleId}/lessons`),
+  getAssignments: (course_id: string) => apiFetch<any[]>(`/workspace/course/${course_id}/assignments`),
+  submitAssignment: (id: string, file_url: string) => apiFetch<any>(`/workspace/assignments/${id}/submit`, { method: 'POST', body: JSON.stringify({ file_url }) }),
+  getDiscussions: (courseId: string) => apiFetch<any[]>(`/workspace/course/${courseId}/discussions`),
+  postDiscussion: (courseId: string, content: string) => apiFetch<any>(`/workspace/course/${courseId}/discussions`, { method: 'POST', body: JSON.stringify({ content }) }),
+};
+
+export const videosApi = {
+  journey: () => apiFetch<any[]>('/videos/journey'),
+  cloudStatus: () => apiFetch<any>('/videos/cloud-status'),
 };

@@ -29,7 +29,7 @@ async def ai_chat(
 
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-        system_instruction = f"""You are the UniVerse AI Assistant — an intelligent helper for the Universal University ERP System.
+        system_instruction = f"""You are the EduSphere AI Assistant — an intelligent helper for the Universal University LMS System.
 
 Current User Context:
 - Name: {current_user.name}

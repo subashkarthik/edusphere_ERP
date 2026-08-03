@@ -1,67 +1,93 @@
-# EduSpere — Learning Management System
+# EduSphere — Universal University LMS System
 
-EduSpere is a high-performance, student-centric Learning Management System designed with an **iOS 26 Liquid Glass** design language. It focuses on delivering a streamlined academic experience through a modern, intuitive interface.
+![EduSphere LMS Logo](https://ui-avatars.com/api/?name=UV&background=6366f1&color=fff&size=120)
+
+**EduSphere LMS** is an enterprise-grade academic management platform designed for modern universities. It features a high-performance React frontend with an "iOS 26 Liquid Glass" design language and a robust FastAPI backend with a hybrid SQLite + MS Access database architecture.
 
 ## 🚀 Key Features
 
-- **Learning-Centric UI**: Stunning frosted-translucency design focused on courses, resources, and results.
-- **Academic Core**: Full management of courses, study materials, and academic timetables.
-- **Student Dashboard**: Real-time overview of attendance, GPA progress, and upcoming sessions.
-- **Intelligent Assistant**: Integrated **Gemini AI** for academic doubt clearing and portal navigation.
-- **Performance Optimized**: Built with React 19 and Vite for instant responsiveness.
-- **Resilient Architecture**: Modular design with error-boundary protection for every module.
+-   **Intelligence Hub**: Role-based dashboards (Student, Faculty, Admin) with live KPI metrics and predictive analytics.
+-   **Hybrid Database**: Seamless integration with institutional MS Access databases for real-time academic data, with automatic SQLite fallback.
+-   **AI Assistant**: Context-aware institutional AI powered by Gemini 3 Flash to assist with scheduling, grading, and campus life.
+-   **Module Suite**: 11+ functional modules including Attendance, Curriculum, Finance, Exams, Placements, and Digital Library.
+-   **Security First**: Built-in rate limiting, input sanitization, JWT authentication with rotation, and structured audit logging.
+-   **High Performance**: React code-splitting, lazy loading, and paginated API endpoints for sub-second response times.
 
 ## 🛠️ Technology Stack
 
-- **Frontend**: React 19, Vite, TypeScript, Tailwind CSS, Lucide React, Recharts.
-- **Backend**: FastAPI (Python 3.10+), SQLAlchemy, Pydantic.
-- **Database**: 
-  - **SQLite**: Authentication, Finance, System Logs, and Application State.
-  - **MS Access**: Core Academic Data (Faculty, Timetable, Attendance, Subjects, Rooms).
-- **AI**: Google Gemini Pro (via `@google/genai` and backend integration).
+-   **Frontend**: React 19, TypeScript, Vite, Tailwind CSS, Lucide React, Recharts.
+-   **Backend**: FastAPI, SQLAlchemy, Pydantic, PyODBC (for MS Access).
+-   **Database**: SQLite (Core/Auth) + MS Access (Academic Data).
 
-## 📦 Getting Started
+## 📥 Getting Started
 
-### 1. Prerequisites
-- Node.js 18+
-- Python 3.10+
-- Microsoft Access Database Engine (for `.accdb` connectivity)
+### Prerequisites
+-   **Node.js** (v18+)
+-   **Python** (v3.10+)
+-   **MS Access ODBC Driver** (64-bit)
 
-### 2. Installation
+### Installation
 
-```bash
-# Install frontend dependencies
-npm install
+1.  **Clone the repository**
+    ```bash
+    git clone https://github.com/subashkarthik/EduSphere_LMS.git
+    cd EduSphere_LMS
+    ```
 
-# Install backend dependencies
-cd server
-pip install -r requirements.txt
+2.  **Setup Backend**
+    ```bash
+    cd server
+    python -m venv venv
+    source venv/bin/activate  # or venv\Scripts\activate on Windows
+    pip install -r requirements.txt
+    python -m utils.seed  # Seed the initial database
+    ```
+
+3.  **Setup Frontend**
+    ```bash
+    cd ..
+    npm install
+    ```
+
+### Running the Application
+
+1.  **Start Backend** (Port 5000)
+    ```bash
+    npm run dev:backend
+    ```
+
+2.  **Start Frontend** (Port 3000)
+    ```bash
+    npm run dev
+    ```
+
+## 🔐 Credentials (Demo Mode)
+
+| Role | Email | Password |
+| :--- | :--- | :--- |
+| 🎓 **Student** | `alex.j@edusphere.edu.in` | `student123` |
+| 👨‍🏫 **Faculty** | `arun.kumar@edusphere.edu.in` | `faculty123` |
+| 🔑 **Admin** | `admin@edusphere.edu.in` | `admin123` |
+
+## 📐 Architecture
+
+```mermaid
+graph TD
+    User((User)) -->|Browser| Frontend[React Vite App]
+    Frontend -->|REST API| Backend[FastAPI Server]
+    
+    subgraph "Backend Services"
+        Backend -->|Auth/Core| SQLite[(SQLite DB)]
+        Backend -->|Academic Data| Access[(MS Access DB)]
+        Backend -->|Intelligence| AI[Gemini 1.5 Flash]
+    end
+    
+    subgraph "Middleware"
+        Backend --- RL[Rate Limiter]
+        Backend --- VAL[Validation]
+        Backend --- LOG[Logger]
+    end
 ```
 
-### 3. Configuration
-Copy `server/.env.example` to `server/.env` and update the values:
-- `ACCESS_DB_DIR`: The path to your MS Access database folder.
-- `GEMINI_API_KEY`: Your Google AI Studio API key.
-
-### 4. Running the Application
-
-```bash
-# Seed the application database (SQLite)
-npm run db:seed
-
-# Start the Backend (Port 5000)
-npm run dev:backend
-
-# Start the Frontend (Port 3000)
-npm run dev
-```
-
-## 🧪 Testing
-Run end-to-end API verification:
-```bash
-npm run db:test
-```
-
-## 📄 License
-Internal Institutional Use Only.
-© 2026 Universal University.
+## 📜 License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

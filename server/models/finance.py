@@ -22,6 +22,7 @@ class FeeStructure(Base):
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     due_date: Mapped[datetime] = mapped_column(Date, nullable=False)
     academic_year: Mapped[str] = mapped_column(String(20), default="2024-25")
+    org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, default="org-edusphere")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships
@@ -43,6 +44,7 @@ class FeePayment(Base):
     payment_method: Mapped[str] = mapped_column(String(50), default="Online")
     transaction_id: Mapped[str] = mapped_column(String(100), default="")
     status: Mapped[PaymentStatus] = mapped_column(SAEnum(PaymentStatus), default=PaymentStatus.COMPLETED)
+    org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, default="org-edusphere")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships
@@ -51,3 +53,23 @@ class FeePayment(Base):
 
     def __repr__(self):
         return f"<FeePayment ₹{self.amount_paid} ({self.status.value})>"
+
+
+class LedgerEntry(Base):
+    __tablename__ = "finance_ledger"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, default="org-edusphere")
+    student_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    entry_type: Mapped[str] = mapped_column(String(10), nullable=False) # DEBIT or CREDIT
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    transaction_id: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    student = relationship("User", foreign_keys=[student_id])
+
+    def __repr__(self):
+        return f"<LedgerEntry {self.entry_type}: ₹{self.amount} for {self.student_id}>"
+

@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  edusphere-db:
+    image: postgres:15-alpine
+    container_name: edusphere-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: edusphere
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: edusphere_prod_password_2026
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d edusphere"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  edusphere-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: edusphere-web
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:edusphere_prod_password_2026@edusphere-db:5432/edusphere
+      - JWT_SECRET_KEY=edusphere_super_secret_jwt_key_2026_prod
+      - ENVIRONMENT=production
+    depends_on:
+      edusphere-db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

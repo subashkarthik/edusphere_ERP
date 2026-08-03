@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: edusphere-lms
+    env: docker
+    dockerfilePath: Dockerfile
+    region: singapore
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: edusphere-postgres-db
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: ENVIRONMENT
+        value: production
+
+databases:
+  - name: edusphere-postgres-db
+    databaseName: edusphere
+    user: postgres
+    region: singapore
+    plan: free

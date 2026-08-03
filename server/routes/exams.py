@@ -193,3 +193,224 @@ def _compute_grade(marks: float, max_marks: int) -> str:
         return "C"
     else:
         return "F"
+
+
+# ─── ONLINE QUIZZES & ASSESSMENTS ───
+from models.exam import Quiz, QuizQuestion, QuizAttempt
+from pydantic import BaseModel, Field
+
+class QuizQuestionCreate(BaseModel):
+    question_text: str
+    option_a: str
+    option_b: str
+    option_c: str
+    option_d: str
+    correct_option: str
+    explanation: str | None = None
+    marks: int = 10
+
+class QuizCreate(BaseModel):
+    course_id: str
+    title: str
+    description: str | None = None
+    time_limit_minutes: int = 15
+    passing_percentage: float = 60.0
+    questions: List[QuizQuestionCreate]
+
+class QuizSubmitSchema(BaseModel):
+    answers: dict  # { question_id: "A" | "B" | "C" | "D" }
+    tab_switch_violations: int = 0
+
+
+@router.get("/quizzes")
+def list_quizzes(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List available online quizzes for user."""
+    quizzes = db.query(Quiz).filter(Quiz.is_active == True).all()
+
+    # Get attempts by user
+    user_attempts = {
+        a.quiz_id: a for a in db.query(QuizAttempt).filter(QuizAttempt.student_id == current_user.id).all()
+    }
+
+    result = []
+    for q in quizzes:
+        attempt = user_attempts.get(q.id)
+        result.append({
+            "id": q.id,
+            "course_id": q.course_id,
+            "title": q.title,
+            "description": q.description,
+            "time_limit_minutes": q.time_limit_minutes,
+            "passing_percentage": q.passing_percentage,
+            "total_questions": len(q.questions),
+            "total_marks": sum(qn.marks for qn in q.questions) or q.total_marks,
+            "attempted": attempt is not None,
+            "best_score": attempt.score if attempt else None,
+            "passed": attempt.passed if attempt else None,
+            "created_at": str(q.created_at),
+        })
+
+    return result
+
+
+@router.get("/quizzes/{quiz_id}")
+def get_quiz_details(
+    quiz_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Fetch quiz details and questions for taking the test."""
+    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+
+    questions = db.query(QuizQuestion).filter(QuizQuestion.quiz_id == quiz_id).order_by(QuizQuestion.order_num).all()
+
+    return {
+        "id": quiz.id,
+        "title": quiz.title,
+        "description": quiz.description,
+        "time_limit_minutes": quiz.time_limit_minutes,
+        "passing_percentage": quiz.passing_percentage,
+        "questions": [
+            {
+                "id": qn.id,
+                "question_text": qn.question_text,
+                "option_a": qn.option_a,
+                "option_b": qn.option_b,
+                "option_c": qn.option_c,
+                "option_d": qn.option_d,
+                "marks": qn.marks,
+            }
+            for qn in questions
+        ]
+    }
+
+
+@router.post("/quizzes")
+def create_quiz(
+    payload: QuizCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.FACULTY, UserRole.ADMIN])),
+):
+    """Create a new online quiz with questions. Faculty/Admin only."""
+    total_marks = sum(q.marks for q in payload.questions)
+    quiz = Quiz(
+        course_id=payload.course_id,
+        title=payload.title,
+        description=payload.description,
+        time_limit_minutes=payload.time_limit_minutes,
+        passing_percentage=payload.passing_percentage,
+        total_marks=total_marks,
+        created_by=current_user.id,
+        org_id=current_user.org_id
+    )
+    db.add(quiz)
+    db.commit()
+    db.refresh(quiz)
+
+    for idx, qn in enumerate(payload.questions, start=1):
+        question = QuizQuestion(
+            quiz_id=quiz.id,
+            question_text=qn.question_text,
+            option_a=qn.option_a,
+            option_b=qn.option_b,
+            option_c=qn.option_c,
+            option_d=qn.option_d,
+            correct_option=qn.correct_option.upper(),
+            explanation=qn.explanation,
+            marks=qn.marks,
+            order_num=idx
+        )
+        db.add(question)
+
+    db.commit()
+
+    # WebSocket broadcast alert
+    try:
+        from utils.websocket_manager import manager
+        import asyncio
+        asyncio.create_task(manager.broadcast_to_institution({
+            "type": "NOTIFICATION",
+            "title": "New Quiz Published",
+            "message": f"Quiz '{quiz.title}' is now live!",
+            "category": "QUIZ",
+            "target_role": "STUDENT"
+        }, current_user.org_id))
+    except Exception:
+        pass
+
+    return {"message": "Quiz created successfully", "quiz_id": quiz.id}
+
+
+@router.post("/quizzes/{quiz_id}/submit")
+def submit_quiz(
+    quiz_id: str,
+    payload: QuizSubmitSchema,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Submit quiz answers, auto-grade, record violations, and return result summary."""
+    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+
+    questions = db.query(QuizQuestion).filter(QuizQuestion.quiz_id == quiz_id).all()
+    if not questions:
+        raise HTTPException(status_code=400, detail="Quiz has no questions")
+
+    total_questions = len(questions)
+    correct_answers = 0
+    score = 0.0
+    total_marks = sum(q.marks for q in questions) or 100
+
+    review_details = []
+    for qn in questions:
+        user_choice = payload.answers.get(qn.id, "")
+        is_correct = (user_choice.upper() == qn.correct_option.upper())
+        if is_correct:
+            correct_answers += 1
+            score += qn.marks
+
+        review_details.append({
+            "question_id": qn.id,
+            "question_text": qn.question_text,
+            "user_choice": user_choice,
+            "correct_option": qn.correct_option,
+            "is_correct": is_correct,
+            "explanation": qn.explanation
+        })
+
+    percentage = round((score / total_marks) * 100, 2) if total_marks > 0 else 0
+    passed = percentage >= quiz.passing_percentage
+
+    attempt = QuizAttempt(
+        quiz_id=quiz_id,
+        student_id=current_user.id,
+        score=score,
+        percentage=percentage,
+        passed=passed,
+        total_questions=total_questions,
+        correct_answers=correct_answers,
+        tab_switch_violations=payload.tab_switch_violations,
+        org_id=current_user.org_id
+    )
+    db.add(attempt)
+    db.commit()
+
+    return {
+        "message": "Quiz submitted successfully",
+        "quiz_title": quiz.title,
+        "score": score,
+        "total_marks": total_marks,
+        "percentage": percentage,
+        "passed": passed,
+        "correct_answers": correct_answers,
+        "total_questions": total_questions,
+        "tab_switch_violations": payload.tab_switch_violations,
+        "review": review_details
+    }
+

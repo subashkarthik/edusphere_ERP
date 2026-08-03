@@ -35,6 +35,7 @@ class Announcement(Base):
     __tablename__ = "announcements"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     author_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
@@ -51,29 +52,14 @@ class Announcement(Base):
         return f"<Announcement {self.title}>"
 
 
-class AuditLog(Base):
-    __tablename__ = "audit_logs"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
-    action: Mapped[str] = mapped_column(String(100), nullable=False)
-    entity_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    entity_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    details: Mapped[str | None] = mapped_column(Text, nullable=True)
-    ip_address: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    # Relationships
-    user = relationship("User", back_populates="audit_logs")
-
-    def __repr__(self):
-        return f"<AuditLog {self.action}: {self.entity_type}>"
+# AuditLog consolidated to models/audit.py
 
 
 class LeaveRequest(Base):
     __tablename__ = "leave_requests"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     leave_type: Mapped[LeaveType] = mapped_column(SAEnum(LeaveType), nullable=False)
     start_date: Mapped[datetime] = mapped_column(Date, nullable=False)
@@ -95,6 +81,7 @@ class LibraryBook(Base):
     __tablename__ = "library_books"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False)
     isbn: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     author: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -115,6 +102,7 @@ class BookIssue(Base):
     __tablename__ = "book_issues"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False)
     book_id: Mapped[str] = mapped_column(String(36), ForeignKey("library_books.id"), nullable=False)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     issue_date: Mapped[datetime] = mapped_column(Date, nullable=False)

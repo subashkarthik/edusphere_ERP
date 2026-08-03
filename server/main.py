@@ -1,7 +1,7 @@
 """
-UniVerse LMS Backend — Student Learning Portal Application
+EduSphere LMS Backend — Student Learning Portal Application
 
-UniVerse LMS — High-performance Student Learning Management System.
+EduSphere LMS — High-performance Student Learning Management System.
 
 Run:
     uvicorn main:app --reload --port 5000
@@ -14,6 +14,9 @@ import os
 
 # Ensure the server directory is in the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import dotenv
+dotenv.load_dotenv()
 
 # Fix Windows console encoding
 if sys.platform == "win32":
@@ -30,9 +33,14 @@ from database import engine, Base
 from models import (
     User, Department, Course, Enrollment, TimetableEntry, CourseMaterial,
     AttendanceSession, AttendanceLog, ExamSchedule, ExamResult,
-    FeeStructure, FeePayment, PlacementDrive, PlacementApplication, PlacementStats,
+    FeeStructure, FeePayment, LedgerEntry, PlacementDrive, PlacementApplication, PlacementStats,
+
     Announcement, AuditLog, LeaveRequest, LibraryBook, BookIssue,
+    SyncedSubject, SyncedFaculty, SyncedRoom, SyncedTimeSlot,
+    SyncedTimetable, SyncedSemester, SyncedAttendance,
 )
+
+
 
 # Import routers
 from routes.auth import router as auth_router
@@ -42,29 +50,71 @@ from routes.attendance import router as attendance_router
 from routes.exams import router as exams_router
 from routes.timetable import router as timetable_router
 from routes.announcements import router as announcements_router
+from routes.assignments import router as assignments_router
+from routes.library import router as library_router
 from routes.dashboard import router as dashboard_router
 from routes.ai import router as ai_router
 from routes.intelligence import router as intelligence_router
+from routes.workspace import router as workspace_router
+from routes.videos import router as videos_router
+from routes.cms import router as cms_router
+from routes.finance import router as finance_router
+from routes.placements import router as placements_router
+from routes.certificates import router as certificates_router
+from routes.upload import router as upload_router
 
 # Import middleware
+
 from middleware.rate_limit import RateLimitMiddleware
 from middleware.validation import InputValidationMiddleware, SecurityHeadersMiddleware
 from middleware.logging import RequestLoggingMiddleware
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from services.analytics import run_analytics_job
+from services.legacy_sync import sync_agent
+import asyncio
+
+# Wrapper for synchronous legacy sync job
+def run_legacy_sync_job():
+    sync_agent.run_sync()
+
+# ─── SCHEDULER ───
+scheduler = AsyncIOScheduler()
+scheduler.add_job(run_analytics_job, 'interval', minutes=60) # Run every hour
+scheduler.add_job(run_legacy_sync_job, 'interval', minutes=30) # Sync legacy DBs every 30 minutes
 
 # ─── LIFESPAN ───
 @asynccontextmanager
 async def lifespan(app):
     Base.metadata.create_all(bind=engine)
-    print("[OK] UniVerse LMS API server started")
+    
+    # Initialize Redis for WebSockets
+    from utils.websocket_manager import manager
+    await manager.initialize_redis()
+
+    # Trigger Initial database legacy sync on startup asynchronously
+    try:
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(None, sync_agent.run_sync)
+    except Exception as e:
+        print(f"[LIFESPAN ERROR] Legacy sync startup run failed: {e}")
+    
+    scheduler.start()
+    print("[OK] Background task scheduler started")
+    print("[OK] EduSphere LMS API server started")
     print("[DOCS] API Docs: http://localhost:5000/api/docs")
     print("[DOCS] ReDoc: http://localhost:5000/api/redoc")
     yield
+    scheduler.shutdown()
+    print("[OK] Background task scheduler stopped")
+
+
 
 
 # ─── APPLICATION ───
 app = FastAPI(
-    title="EduSpere API",
-    description="EduSpere — Student Learning Management System Portal",
+    title="EduSphere LMS API",
+    description="EduSphere LMS — Student Learning Management System Portal",
     version="3.0.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
@@ -93,15 +143,16 @@ app.add_middleware(
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
-    expose_headers=["X-Correlation-ID", "X-RateLimit-Limit", "X-RateLimit-Remaining"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "Range"],
+    expose_headers=["X-Correlation-ID", "X-RateLimit-Limit", "X-RateLimit-Remaining", "Content-Range", "Accept-Ranges"],
 )
 
 # 2. Security headers
 app.add_middleware(SecurityHeadersMiddleware)
 
 # 3. Rate limiting
-app.add_middleware(RateLimitMiddleware, general_limit=100, auth_limit=10, window_seconds=60)
+# 3. Rate limiting (Enhanced for Enterprise development)
+app.add_middleware(RateLimitMiddleware, general_limit=200, auth_limit=50, window_seconds=60)
 
 # 4. Request logging
 app.add_middleware(RequestLoggingMiddleware)
@@ -118,8 +169,36 @@ app.include_router(attendance_router)
 app.include_router(exams_router)
 app.include_router(timetable_router)
 app.include_router(announcements_router)
+app.include_router(assignments_router)
+app.include_router(library_router)
 app.include_router(intelligence_router)
 app.include_router(ai_router)
+app.include_router(workspace_router)
+app.include_router(videos_router)
+app.include_router(cms_router)
+app.include_router(finance_router)
+app.include_router(placements_router)
+app.include_router(certificates_router)
+app.include_router(upload_router)
+
+from fastapi import WebSocket, WebSocketDisconnect
+from utils.websocket_manager import manager
+
+@app.websocket("/ws/{org_id}/{user_id}")
+async def websocket_endpoint(websocket: WebSocket, org_id: str, user_id: str):
+    await manager.connect(websocket, user_id, org_id)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # Echo or process incoming socket data if needed
+            await manager.broadcast_to_institution({
+                "type": "USER_ACTIVITY",
+                "user_id": user_id,
+                "action": "ping"
+            }, org_id)
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, user_id, org_id)
+        await manager.broadcast_pulse(org_id)
 
 
 # ─── HEALTH CHECK ───
@@ -127,7 +206,7 @@ app.include_router(ai_router)
 def health_check():
     return {
         "status": "healthy",
-        "platform": "UniVerse LMS",
+        "platform": "EduSphere LMS",
         "version": "3.0.0",
     }
 
@@ -166,16 +245,34 @@ def db_health_check():
     return {
         "status": overall,
         "databases": results,
-        "platform": "UniVerse LMS",
+        "platform": "EduSphere LMS",
     }
 
 
-# ─── ROOT ───
-@app.get("/", tags=["System"])
-def root():
+# ─── STATIC FRONTEND MOUNT (PRODUCTION SPA FALLBACK) ───
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+dist_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dist")
+if not os.path.exists(dist_path):
+    dist_path = "/app/dist"
+
+assets_path = os.path.join(dist_path, "assets")
+index_file = os.path.join(dist_path, "index.html")
+
+if os.path.exists(assets_path):
+    app.mount("/assets", StaticFiles(directory=assets_path), name="static_assets")
+
+@app.get("/{full_path:path}", tags=["System"])
+def spa_fallback(request: Request, full_path: str):
+    if full_path.startswith("api"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="API endpoint not found")
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
     return {
-        "message": "UniVerse LMS API",
-        "description": "UniVerse LMS — Student Learning Management System",
+        "message": "EduSphere LMS API",
+        "description": "EduSphere LMS — Student Learning Management System",
         "docs": "/api/docs",
         "version": "3.0.0",
     }

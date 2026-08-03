@@ -18,6 +18,12 @@ server/.env
 *.accdb
 *.ldb
 
+# Heavy Video Assets
+server/storage/videos/
+*.mp4
+*.mkv
+*.webm
+
 # Logs
 logs
 *.log

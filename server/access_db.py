@@ -1,7 +1,7 @@
 """
 MS Access Database Reader Module
 
-Provides read-only access to the 7 Access databases in the ERP folder.
+Provides read-only access to the 7 Access databases in the institutional folder.
 Uses pyodbc with the Microsoft Access ODBC driver.
 
 All data fetching from Access goes through this module.
@@ -25,14 +25,14 @@ ACCESS_DATABASES = {
     "resource":    "ResourceDB.accdb",
     "subject":     "Subject&Course.accdb",
     "timetable":   "TimeTableDB.accdb",
-    "erp_main":    "ERP_Main.accdb",
+    "lms_main":    "ERP_Main.accdb",
 }
 
 # Simple in-memory cache to avoid hammering Access files on every request
 _cache: Dict[str, Any] = {}
 _cache_timestamps: Dict[str, float] = {}
 _cache_lock = threading.Lock()
-CACHE_TTL_SECONDS = 30  # Cache data for 30 seconds
+CACHE_TTL_SECONDS = 300  # Cache data for 5 minutes
 
 
 def _get_connection_string(db_key: str) -> str:
@@ -63,6 +63,16 @@ def _set_cached(cache_key: str, data: Any):
         _cache[cache_key] = data
         _cache_timestamps[cache_key] = time.time()
 
+_db_status: Dict[str, Optional[bool]] = {
+    "academic": None,
+    "attendance": None,
+    "faculty": None,
+    "resource": None,
+    "subject": None,
+    "timetable": None,
+    "lms_main": None,
+}
+
 
 def query_access(db_key: str, sql: str, params: tuple = (), use_cache: bool = True) -> List[Dict[str, Any]]:
     """
@@ -70,6 +80,9 @@ def query_access(db_key: str, sql: str, params: tuple = (), use_cache: bool = Tr
     Returns list of dicts (column_name → value).
     Uses caching to avoid Access file locking issues.
     """
+    if _db_status.get(db_key) is False:
+        return []
+
     cache_key = f"{db_key}:{sql}:{params}"
 
     if use_cache:
@@ -80,7 +93,8 @@ def query_access(db_key: str, sql: str, params: tuple = (), use_cache: bool = Tr
     conn_str = _get_connection_string(db_key)
     conn = None
     try:
-        conn = pyodbc.connect(conn_str)
+        conn = pyodbc.connect(conn_str, timeout=5)
+        _db_status[db_key] = True
         cursor = conn.cursor()
         cursor.execute(sql, params)
         columns = [desc[0] for desc in cursor.description]
@@ -93,29 +107,9 @@ def query_access(db_key: str, sql: str, params: tuple = (), use_cache: bool = Tr
             _set_cached(cache_key, result)
         return result
     except Exception as e:
-        # On driver error, try one more time after a small delay
-        if conn:
-            try:
-                conn.close()
-            except Exception:
-                pass
-            conn = None
-        time.sleep(0.1)
-        try:
-            conn = pyodbc.connect(conn_str)
-            cursor = conn.cursor()
-            cursor.execute(sql, params)
-            columns = [desc[0] for desc in cursor.description]
-            rows = cursor.fetchall()
-            result = [
-                {col: _convert_value(val) for col, val in zip(columns, row)}
-                for row in rows
-            ]
-            if use_cache:
-                _set_cached(cache_key, result)
-            return result
-        except Exception:
-            raise e  # Re-raise original error
+        _db_status[db_key] = False
+        print(f"[Access DB Error] Disabling further attempts for {db_key}. Error: {e}")
+        raise RuntimeError(f"Access DB error: {e}")
     finally:
         if conn:
             try:
@@ -237,20 +231,29 @@ def get_full_timetable() -> List[Dict]:
     """
     Build the complete timetable by joining Timetable entries with
     Subject_Master, Faculty_Master, Room_Master, and Time_Slots.
-    Since these are in separate Access databases, we join in Python.
+    Queries multiple databases in parallel for speed.
     """
-    # Check composite cache first
+    from concurrent.futures import ThreadPoolExecutor
+    
     cached = _get_cached("full_timetable")
     if cached is not None:
         return cached
 
-    # Fetch all reference data
-    timetable_entries = get_timetable_entries()
-    time_slots = {s["SlotID"]: s for s in get_time_slots()}
-    subjects = {s["SubjectID"]: s for s in get_all_subjects()}
-    faculty = {f["FacultyID"]: f for f in get_all_faculty()}
-    rooms = {r["RoomID"]: r for r in get_all_rooms()}
-    semesters = {s["SemesterID"]: s for s in get_semesters()}
+    # Fetch reference data in parallel
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        f_tt = executor.submit(get_timetable_entries)
+        f_slots = executor.submit(get_time_slots)
+        f_subs = executor.submit(get_all_subjects)
+        f_fac = executor.submit(get_all_faculty)
+        f_rooms = executor.submit(get_all_rooms)
+        f_sems = executor.submit(get_semesters)
+        
+        timetable_entries = f_tt.result()
+        time_slots = {s["SlotID"]: s for s in f_slots.result()}
+        subjects = {s["SubjectID"]: s for s in f_subs.result()}
+        faculty = {f["FacultyID"]: f for f in f_fac.result()}
+        rooms = {r["RoomID"]: r for r in f_rooms.result()}
+        semesters = {s["SemesterID"]: s for s in f_sems.result()}
 
     result = []
     for entry in timetable_entries:
@@ -292,22 +295,31 @@ def get_attendance_summary() -> List[Dict]:
     """
     Build attendance summary by joining Attendance records with
     Faculty, Time_Slots, and Subject data.
-    Groups by subject and computes present/absent counts.
+    Queries multiple databases in parallel for speed.
     """
+    from concurrent.futures import ThreadPoolExecutor
+    
     cached = _get_cached("attendance_summary")
     if cached is not None:
         return cached
 
-    attendance = get_attendance_records()
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        f_att = executor.submit(get_attendance_records)
+        f_tt = executor.submit(get_timetable_entries)
+        f_subs = executor.submit(get_all_subjects)
+        
+        attendance = f_att.result()
+        timetable = f_tt.result()
+        subjects_list = f_subs.result()
+
     # Get timetable to map SlotID → SubjectID
-    timetable = get_timetable_entries()
     slot_to_subject = {}
     for tt in timetable:
         sid = tt.get("SlotID")
         if sid and sid not in slot_to_subject:
             slot_to_subject[sid] = tt.get("SubjectID")
 
-    subjects = {s["SubjectID"]: s for s in get_all_subjects()}
+    subjects = {s["SubjectID"]: s for s in subjects_list}
 
     # Group attendance by subject
     subject_stats: Dict[int, Dict] = {}

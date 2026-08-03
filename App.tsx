@@ -5,45 +5,68 @@ import Header from './components/Header';
 import AIAssistant from './components/AIAssistant';
 import SplashScreen from './components/SplashScreen';
 import ErrorBoundary from './components/ErrorBoundary';
+import EcosystemDrawer from './components/EcosystemDrawer';
 import { FullPageLoader } from './components/LoadingSkeleton';
 import { UserRole, UserProfile } from './types';
-import { LayoutDashboard, Calendar, Users, Menu, Lock, LogIn, AlertCircle, Loader2, Sparkles, Activity } from 'lucide-react';
+import { LayoutDashboard, Calendar, Users, Menu, Lock, LogIn, AlertCircle, Loader2, Sparkles, Activity, Layers } from 'lucide-react';
 import { ROLE_THEMES } from './constants';
+import Logo from './components/Logo';
 import { authApi, setTokens, clearTokens, getAccessToken } from './services/api';
+import { useSocket } from './hooks/useSocket';
+import { LiveNotificationToast } from './components/LiveNotificationToast';
 
-// Lazy-loaded views for code-splitting
-const Dashboard = lazy(() => import('./views/Dashboard'));
-const AttendanceModule = lazy(() => import('./views/AttendanceModule'));
-const SubjectsModule = lazy(() => import('./views/SubjectsModule'));
-const ExamsModule = lazy(() => import('./views/ExamsModule'));
-const TimetableView = lazy(() => import('./views/TimetableView'));
-const AnnouncementsView = lazy(() => import('./views/AnnouncementsView'));
-const LibraryView = lazy(() => import('./views/LibraryView'));
-const LearningJourney = lazy(() => import('./views/LearningJourney'));
+// Core Views
+import Dashboard from './views/Dashboard';
+import AttendanceModule from './views/AttendanceModule';
+import SubjectsModule from './views/SubjectsModule';
+import FacultyCMS from './views/FacultyCMS';
+import ExamsModule from './views/ExamsModule';
+import TimetableView from './views/TimetableView';
+import AnnouncementsView from './views/AnnouncementsView';
+import LibraryView from './views/LibraryView';
+import LearningJourney from './views/LearningJourney';
+import LearningWorkspace from './views/LearningWorkspace';
+import AssignmentModule from './views/AssignmentModule';
+import UsersModule from './views/UsersModule';
+import SystemModule from './views/SystemModule';
+import SettingsModule from './views/SettingsModule';
+import EnterpriseEcosystem from './views/EnterpriseEcosystem';
+import CertificationsModule from './views/CertificationsModule';
+import DegreeAuditView from './views/DegreeAuditView';
+import VoiceVivaModule from './views/VoiceVivaModule';
+import VirtualLab3DView from './views/VirtualLab3DView';
+import SkillQuestView from './views/SkillQuestView';
+import { Login } from './components/Login';
+
 
 const App: React.FC = () => {
+  console.log('--- App Component Executing ---');
   const [showSplash, setShowSplash] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [selectedCourse, setSelectedCourse] = useState<any | null>(null);
   const [currentRole, setCurrentRole] = useState<UserRole>(UserRole.STUDENT);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isEcosystemOpen, setIsEcosystemOpen] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
-  const [loginEmail, setLoginEmail] = useState('alex.j@universe.edu.in');
+  const [loginEmail, setLoginEmail] = useState('alex.j@edusphere.edu.in');
   const [loginPassword, setLoginPassword] = useState('student123');
   
   const [user, setUser] = useState<UserProfile>({
     id: '1',
     name: 'Alex Johnson',
     role: UserRole.STUDENT,
-    email: 'alex.j@universe.edu.in',
+    email: 'alex.j@edusphere.edu.in',
     department: 'Computer Science',
-    avatar: 'https://picsum.photos/seed/alex/200/200',
+    avatar: 'https://ui-avatars.com/api/?name=Alex+Johnson&background=4f46e5&color=fff',
     enrollmentNo: 'UNI/2021/CS/042'
   });
 
+  const { toasts, dismissToast } = useSocket(user.id, user.org_id || 'org-edusphere');
+
   useEffect(() => {
-    const timer = setTimeout(() => setShowSplash(false), 2800);
+    const timer = setTimeout(() => setShowSplash(false), 1200);
     return () => clearTimeout(timer);
   }, []);
 
@@ -52,6 +75,7 @@ const App: React.FC = () => {
     const handleNavigate = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail?.tab) setActiveTab(detail.tab);
+      if (detail?.courseData) setSelectedCourse(detail.courseData);
     };
     window.addEventListener('universe-navigate', handleNavigate);
     return () => window.removeEventListener('universe-navigate', handleNavigate);
@@ -59,9 +83,44 @@ const App: React.FC = () => {
 
   // Default to student prefill
   useEffect(() => {
-    setLoginEmail('alex.j@universe.edu.in');
+    setLoginEmail('alex.j@edusphere.edu.in');
     setLoginPassword('student123');
   }, []);
+
+  const handleSwitchRole = (newRole: UserRole) => {
+    setCurrentRole(newRole);
+    if (newRole === UserRole.STUDENT) {
+      setUser({
+        id: '1',
+        name: 'Alex Johnson',
+        role: UserRole.STUDENT,
+        email: 'alex.j@edusphere.edu.in',
+        department: 'Computer Science & Engineering',
+        avatar: 'https://ui-avatars.com/api/?name=Alex+Johnson&background=4f46e5&color=fff',
+        enrollmentNo: 'UNI/2021/CS/042'
+      });
+    } else if (newRole === UserRole.FACULTY) {
+      setUser({
+        id: '2',
+        name: 'Dr. Arun Kumar',
+        role: UserRole.FACULTY,
+        email: 'arun.kumar@edusphere.edu.in',
+        department: 'Computer Science & Engineering',
+        avatar: 'https://ui-avatars.com/api/?name=Arun+Kumar&background=059669&color=fff',
+        designation: 'Professor & Dean of Research'
+      });
+    } else if (newRole === UserRole.ADMIN) {
+      setUser({
+        id: '3',
+        name: 'System Registrar',
+        role: UserRole.ADMIN,
+        email: 'admin@edusphere.edu.in',
+        department: 'University Administration',
+        avatar: 'https://ui-avatars.com/api/?name=Admin+Registrar&background=e11d48&color=fff',
+        designation: 'Chief Academic Officer'
+      });
+    }
+  };
 
   const handleLogin = async () => {
     if (loginLoading) return;
@@ -87,10 +146,12 @@ const App: React.FC = () => {
         avatar: backendUser.avatar || `https://ui-avatars.com/api/?name=${backendUser.name.replace(' ', '+')}&background=1e3a8a&color=fff`,
         enrollmentNo: backendUser.enrollment_no || undefined,
         designation: backendUser.designation || undefined,
+        org_id: backendUser.org_id,
       });
       setCurrentRole(mappedRole);
       setIsLoggedIn(true);
       setActiveTab('dashboard');
+      window.dispatchEvent(new CustomEvent('institution-data-sync'));
     } catch (err: any) {
       console.error('Login failed:', err);
       setLoginError(err.message || 'Authentication failed. Is the backend running?');
@@ -126,6 +187,29 @@ const App: React.FC = () => {
           return <SubjectsModule id="academics" role={currentRole} />;
         case 'exams':
           return <ExamsModule id="exams" role={currentRole} />;
+        case 'assignments':
+          return <AssignmentModule role={currentRole} />;
+        case 'degree_audit':
+          return <DegreeAuditView user={user} />;
+        case 'voice_viva':
+          return <VoiceVivaModule />;
+        case 'virtual_lab':
+          return <VirtualLab3DView />;
+        case 'skill_quest':
+          return <SkillQuestView />;
+        case 'certificates':
+          return <CertificationsModule user={user} />;
+        case 'cms':
+          return <FacultyCMS role={currentRole} />;
+
+        case 'ecosystem':
+          return <EnterpriseEcosystem />;
+        case 'users':
+          return <UsersModule currentUserRole={currentRole} />;
+        case 'system':
+          return <SystemModule user={user} />;
+        case 'workspace':
+          return <LearningWorkspace courseData={selectedCourse} onBack={() => setActiveTab('journey')} />;
         case 'timetable':
           return <TimetableView role={currentRole} />;
         case 'announcements':
@@ -133,19 +217,13 @@ const App: React.FC = () => {
         case 'library':
           return <LibraryView role={currentRole} />;
         case 'settings':
-          return (
-            <div className="flex flex-col items-center justify-center p-10 md:p-20 text-center bg-white rounded-3xl border border-slate-100 shadow-sm animate-in fade-in duration-500">
-              <div className="w-16 h-16 md:w-20 md:h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6 text-2xl md:text-3xl">⚙️</div>
-              <h2 className="text-xl md:text-2xl font-black text-slate-800 uppercase tracking-tight">System Preferences</h2>
-              <p className="text-slate-500 mt-2 max-w-md font-medium text-sm md:text-base">Personalize your learning environment and notification settings.</p>
-            </div>
-          );
+          return <SettingsModule user={user} onUserUpdate={(updatedUser) => setUser(updatedUser)} />;
         default:
           return (
-            <div className="flex flex-col items-center justify-center p-10 md:p-20 text-center bg-white rounded-3xl border border-slate-100 shadow-sm animate-in fade-in duration-500">
-              <div className="w-16 h-16 md:w-20 md:h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6 text-2xl md:text-3xl">🏗️</div>
-              <h2 className="text-xl md:text-2xl font-black text-slate-800 uppercase tracking-tight">{activeTab} Console</h2>
-              <p className="text-slate-500 mt-2 max-w-md font-medium text-sm md:text-base">This institutional module is currently performing a scheduled database re-indexing.</p>
+            <div className="flex flex-col items-center justify-center p-10 md:p-20 text-center glass glass-edge rounded-3xl animate-in fade-in duration-500">
+              <div className="w-16 h-16 md:w-20 md:h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 text-2xl md:text-3xl">🏗️</div>
+              <h2 className="text-xl md:text-2xl font-black text-slate-100 uppercase tracking-tight">{activeTab} Console</h2>
+              <p className="text-slate-400 mt-2 max-w-md font-medium text-sm md:text-base">This institutional module is currently performing a scheduled database re-indexing.</p>
             </div>
           );
       }
@@ -164,72 +242,38 @@ const App: React.FC = () => {
 
   if (!isLoggedIn) {
     return (
-      <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center p-4">
-        <div className="absolute top-[-20%] right-[-20%] w-[80%] h-[80%] bg-indigo-600/10 rounded-full blur-[160px]" />
-        <div className="w-full max-w-md relative z-10 bg-white/10 backdrop-blur-xl border border-white/10 rounded-[40px] p-8 md:p-12 shadow-2xl animate-in zoom-in-95 duration-500">
-          <div className="flex justify-center mb-8">
-            <div className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-3xl flex items-center justify-center shadow-xl shadow-indigo-500/20 ring-4 ring-white/5">
-              <Lock size={28} className="text-white" />
-            </div>
-          </div>
-          <div className="text-center mb-8">
-            <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight uppercase">EduSpere</h2>
-            <p className="text-white/40 font-black text-[9px] uppercase tracking-[0.4em] mt-2">Learning Management System</p>
-          </div>
-          
-          <div className="space-y-6">
-            {loginError && (
-              <div className="flex items-center gap-3 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl">
-                <AlertCircle size={18} className="text-rose-400 shrink-0" />
-                <p className="text-rose-300 text-xs font-bold">{loginError}</p>
-              </div>
-            )}
+      <Login
+        onLoginSuccess={(backendUser, tokens) => {
+          setTokens(tokens.access_token, tokens.refresh_token);
+          const mappedRole = (backendUser.role as keyof typeof UserRole) in UserRole 
+            ? UserRole[backendUser.role as keyof typeof UserRole] 
+            : UserRole.STUDENT;
 
-            <div className="space-y-3">
-              <input 
-                type="email" 
-                placeholder="Student Email" 
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white placeholder-white/20 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-bold text-sm" 
-              />
-              <input 
-                type="password" 
-                placeholder="Access Key"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white placeholder-white/20 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-bold text-sm" 
-              />
-            </div>
-
-            <button 
-              onClick={handleLogin}
-              disabled={loginLoading}
-              className="w-full py-5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] md:text-xs transition-all shadow-xl shadow-indigo-600/20 flex items-center justify-center gap-3 active:scale-95 group"
-            >
-              {loginLoading ? (
-                <><Loader2 size={18} className="animate-spin" /> Verifying Credentials...</>
-              ) : (
-                <>Enter Portal <LogIn size={18} className="group-hover:translate-x-1 transition-transform" /></>
-              )}
-            </button>
-          </div>
-
-          <div className="mt-10 pt-8 border-t border-white/5">
-            <p className="text-center text-[10px] text-white/40 font-bold leading-relaxed">
-              "Access your courses, timetable, and academic records through our streamlined learning interface."
-            </p>
-          </div>
-        </div>
-      </div>
+          setUser({
+            id: backendUser.id,
+            name: backendUser.name,
+            email: backendUser.email,
+            role: mappedRole,
+            department: backendUser.department || undefined,
+            avatar: backendUser.avatar || `https://ui-avatars.com/api/?name=${backendUser.name.replace(' ', '+')}&background=1e3a8a&color=fff`,
+            enrollmentNo: backendUser.enrollment_no || undefined,
+            designation: backendUser.designation || undefined,
+            phone: backendUser.phone || undefined,
+            org_id: backendUser.org_id,
+          });
+          setCurrentRole(mappedRole);
+          setIsLoggedIn(true);
+          setActiveTab('dashboard');
+          window.dispatchEvent(new CustomEvent('institution-data-sync'));
+        }}
+      />
     );
   }
 
   const theme = ROLE_THEMES[currentRole];
 
   return (
-    <div className="min-h-screen flex bg-[#f8fafc] overflow-x-hidden selection:bg-indigo-100">
+    <div className="min-h-screen flex overflow-x-hidden selection:bg-indigo-500/30 relative z-10">
       <div className="flex w-full animate-in fade-in duration-1000">
         <Sidebar 
           currentRole={currentRole} 
@@ -244,6 +288,7 @@ const App: React.FC = () => {
           <Header 
             user={user} 
             onOpenMenu={() => setIsSidebarOpen(true)}
+            onOpenEcosystem={() => setIsEcosystemOpen(true)}
           />
           
           <main className="flex-1 mt-16 p-4 md:p-10 max-w-[1600px] mx-auto w-full pb-24 lg:pb-10">
@@ -251,28 +296,38 @@ const App: React.FC = () => {
           </main>
         </div>
 
+        {/* 16-Domain Ecosystem Modal Drawer */}
+        <EcosystemDrawer 
+          isOpen={isEcosystemOpen}
+          currentRole={currentRole}
+          onClose={() => setIsEcosystemOpen(false)}
+          onSelectModule={(modId) => {
+            setActiveTab('ecosystem');
+          }}
+        />
+
         {/* Mobile Bottom Navigation Bar */}
-        <nav className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-xl border-t border-slate-200 lg:hidden flex items-center justify-around px-2 py-3 z-[50] safe-bottom shadow-[0_-8px_30px_rgb(0,0,0,0.04)]">
+        <nav className="fixed bottom-0 left-0 right-0 glass-sidebar border-t border-white/[0.06] lg:hidden flex items-center justify-around px-2 py-3 z-[50] safe-bottom">
           <button 
             onClick={() => setActiveTab('dashboard')} 
-            className={`flex flex-col items-center gap-1 flex-1 transition-all ${activeTab === 'dashboard' ? 'text-indigo-600' : 'text-slate-400'}`}
+            className={`flex flex-col items-center gap-1 flex-1 transition-all ${activeTab === 'dashboard' ? 'text-indigo-400' : 'text-slate-500'}`}
           >
             <LayoutDashboard size={20} strokeWidth={activeTab === 'dashboard' ? 2.5 : 2} />
             <span className="text-[9px] font-black uppercase tracking-widest">Dash</span>
           </button>
           <button 
+            onClick={() => setIsEcosystemOpen(true)} 
+            className={`flex flex-col items-center gap-1 flex-1 transition-all text-indigo-400`}
+          >
+            <Layers size={20} />
+            <span className="text-[9px] font-black uppercase tracking-widest">16 Modules</span>
+          </button>
+          <button 
             onClick={() => setActiveTab('journey')} 
-            className={`flex flex-col items-center gap-1 flex-1 transition-all ${activeTab === 'journey' ? 'text-indigo-600' : 'text-slate-400'}`}
+            className={`flex flex-col items-center gap-1 flex-1 transition-all ${activeTab === 'journey' ? 'text-indigo-400' : 'text-slate-500'}`}
           >
             <Sparkles size={20} strokeWidth={activeTab === 'journey' ? 2.5 : 2} />
             <span className="text-[9px] font-black uppercase tracking-widest">Journey</span>
-          </button>
-          <button 
-            onClick={() => setActiveTab('attendance')} 
-            className={`flex flex-col items-center gap-1 flex-1 transition-all ${activeTab === 'attendance' ? 'text-indigo-600' : 'text-slate-400'}`}
-          >
-            <Activity size={20} strokeWidth={activeTab === 'attendance' ? 2.5 : 2} />
-            <span className="text-[9px] font-black uppercase tracking-widest">Data</span>
           </button>
           <button 
             onClick={() => setIsSidebarOpen(true)} 
@@ -284,6 +339,7 @@ const App: React.FC = () => {
         </nav>
 
         <AIAssistant role={currentRole} />
+        <LiveNotificationToast messages={toasts} onDismiss={dismissToast} />
       </div>
     </div>
   );

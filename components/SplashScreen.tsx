@@ -19,24 +19,9 @@ const SplashScreen: React.FC = () => {
       <div className="absolute bottom-[-20%] left-[-20%] w-[80%] h-[80%] bg-violet-600/5 rounded-full blur-[160px] animate-pulse delay-1000" />
       
       <div className="relative flex flex-col items-center animate-in fade-in zoom-in duration-1000">
-        {/* Animated Logo Container */}
-        <div className="relative mb-10">
-          <div className="absolute inset-0 bg-indigo-500/10 rounded-full blur-3xl animate-pulse" />
-          <Logo size={140} className="relative drop-shadow-[0_0_20px_rgba(99,102,241,0.3)]" />
-        </div>
-
-        {/* Text Branding */}
-        <div className="text-center space-y-4">
-          <h1 className="text-5xl md:text-7xl font-black text-white tracking-[0.2em] leading-none">
-            UniVerse
-          </h1>
-          <div className="flex items-center justify-center gap-4">
-            <div className="h-[1px] w-8 bg-indigo-500/30"></div>
-            <p className="text-indigo-400 font-black text-[8px] md:text-[10px] uppercase tracking-[0.3em] max-w-[300px] md:max-w-[500px] leading-relaxed opacity-90">
-              Universal University ERP System
-            </p>
-            <div className="h-[1px] w-8 bg-indigo-500/30"></div>
-          </div>
+        <div className="relative mb-12 flex flex-col items-center">
+          <div className="absolute inset-0 bg-indigo-500/5 rounded-full blur-[80px] animate-pulse" />
+          <Logo size={180} variant="full" className="relative scale-110 md:scale-125" />
         </div>
       </div>
 
@@ -51,7 +36,7 @@ const SplashScreen: React.FC = () => {
         <div className="flex items-center gap-2">
           <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-ping"></div>
           <p className="text-slate-500 text-[10px] font-black tracking-[0.4em] uppercase">
-            Initializing ERP Gateway
+            Initializing LMS Gateway
           </p>
         </div>
       </div>
@@ -59,7 +44,7 @@ const SplashScreen: React.FC = () => {
       {/* Footer Branding */}
       <div className="absolute bottom-8 safe-bottom">
         <p className="text-slate-700 text-[10px] font-black tracking-[0.5em] uppercase opacity-40">
-          Enterprise ERP Suite v4.0
+          Enterprise LMS Suite v4.0
         </p>
       </div>
     </div>

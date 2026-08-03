@@ -1,12 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from database import get_db
-from models.user import User, UserRole
+from models.user import User, UserRole, Department
 from models.academic import Course, Enrollment
 from schemas.auth import UserResponse
 from middleware.auth import get_current_user, require_roles
-from access_db import get_all_faculty
+from models.synced_legacy import SyncedFaculty
+from pydantic import BaseModel
+from utils.password import hash_password, verify_password
+from utils.audit_logger import log_audit
 
 router = APIRouter(prefix="/api/users", tags=["Users"])
 
@@ -19,49 +22,50 @@ def list_users(
     limit: int = Query(50, le=200),
     offset: int = Query(0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FACULTY])),
 ):
     """
-    List users. For FACULTY role, reads from MS Access Faculty_Master.
-    For other roles, uses SQLite.
+    List users. For FACULTY role, reads from SyncedFaculty table.
+    For other roles, uses standard User table.
     """
-    # If requesting faculty list, try Access first
+    # If requesting faculty list, try SyncedFaculty first
     if role and role.upper() == "FACULTY":
         try:
-            access_faculty = get_all_faculty()
-            if access_faculty:
+            synced_faculty = db.query(SyncedFaculty).all()
+            if synced_faculty:
                 results = []
-                for f in access_faculty:
-                    name = f.get("Name", "Unknown")
-                    fid = f.get("FacultyID", 0)
+                for f in synced_faculty:
+                    name = f.name
+                    fid = f.id
 
                     # Apply search filter
                     if search:
                         search_lower = search.lower()
-                        if search_lower not in name.lower() and search_lower not in f.get("Department", "").lower():
+                        if search_lower not in name.lower() and search_lower not in (f.department or "").lower():
                             continue
 
                     # Apply department filter
-                    if department_id and f.get("Department", "").upper() != department_id.upper():
+                    if department_id and (f.department or "").upper() != department_id.upper():
                         continue
 
                     results.append({
                         "id": str(fid),
-                        "email": f"{name.lower().replace(' ', '.').replace('_', '')}@universe.edu.in",
+                        "email": f"{name.lower().replace(' ', '.').replace('_', '')}@edusphere.edu.in",
                         "name": name,
                         "role": "FACULTY",
-                        "department": f.get("Department", None),
-                        "department_id": f.get("Department", None),
+                        "department": f.department,
+                        "department_id": f.department,
                         "avatar": f"https://ui-avatars.com/api/?name={name.replace(' ', '+')}&background=1e3a8a&color=fff",
                         "enrollment_no": None,
-                        "designation": f.get("Designation", "Faculty"),
+                        "designation": "Faculty",
                         "phone": None,
-                        "is_active": f.get("Status", "Active") == "Active",
-                        "type": f.get("Type", "Regular"),
+                        "is_active": True,
+                        "type": "Regular",
                     })
                 return results[offset:offset + limit]
         except Exception as e:
-            print(f"[Access] Faculty listing fallback to SQLite: {e}")
+            print(f"[PostgreSQL] Synced Faculty listing fallback to SQLite: {e}")
+
 
     # SQLite fallback / other roles
     query = db.query(User).filter(User.is_active == True)
@@ -119,13 +123,17 @@ def get_user(
     )
 
 
+class UserUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    designation: Optional[str] = None
+    avatar: Optional[str] = None
+    department: Optional[str] = None
+
 @router.put("/{user_id}", response_model=UserResponse)
 def update_user(
     user_id: str,
-    name: Optional[str] = None,
-    phone: Optional[str] = None,
-    designation: Optional[str] = None,
-    avatar: Optional[str] = None,
+    request_data: UserUpdateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -137,14 +145,24 @@ def update_user(
     if current_user.role != UserRole.ADMIN and current_user.id != user_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    if name is not None:
-        user.name = name
-    if phone is not None:
-        user.phone = phone
-    if designation is not None:
-        user.designation = designation
-    if avatar is not None:
-        user.avatar = avatar
+    if request_data.name is not None:
+        user.name = request_data.name
+    if request_data.phone is not None:
+        user.phone = request_data.phone
+    if request_data.designation is not None:
+        user.designation = request_data.designation
+    if request_data.avatar is not None:
+        user.avatar = request_data.avatar
+        
+    if request_data.department is not None:
+        # Search for department by name or code
+        dept = db.query(Department).filter(
+            (Department.name.ilike(request_data.department)) |
+            (Department.code.ilike(request_data.department)),
+            Department.org_id == current_user.org_id
+        ).first()
+        if dept:
+            user.department_id = dept.id
 
     db.commit()
     db.refresh(user)
@@ -174,3 +192,38 @@ def deactivate_user(
     user.is_active = False
     db.commit()
     return {"message": f"User {user.name} deactivated"}
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+@router.post("/change-password", response_model=dict)
+async def change_password(
+    request_data: ChangePasswordRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Change current user's password."""
+    # Verify current password
+    if not verify_password(request_data.current_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="Incorrect current password")
+        
+    # Update to new password
+    current_user.password_hash = hash_password(request_data.new_password)
+    db.commit()
+    
+    await log_audit(
+        db=db,
+        user_id=current_user.id,
+        org_id=current_user.org_id,
+        action="PASSWORD_CHANGED",
+        resource_type="USER",
+        resource_id=current_user.id,
+        metadata={"email": current_user.email},
+        request=request
+    )
+    
+    return {"message": "Password changed successfully"}
+
