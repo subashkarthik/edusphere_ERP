@@ -33,11 +33,9 @@ COPY server /app/server
 COPY --from=frontend-builder /app/dist /app/dist
 
 # Set Environment Variables
-ENV PORT=8000
 ENV PYTHONUNBUFFERED=1
 ENV ENVIRONMENT=production
 
-EXPOSE 8000
+# Start Production Server with Gunicorn + Uvicorn Workers dynamically bound to Render's $PORT
+CMD ["sh", "-c", "gunicorn server.main:app -w 2 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT:-8000} --timeout 120"]
 
-# Start Production Server with Gunicorn + Uvicorn Workers
-CMD ["python", "-m", "gunicorn", "server.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8000"]
