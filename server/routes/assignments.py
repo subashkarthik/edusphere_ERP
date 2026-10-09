@@ -23,6 +23,7 @@ class AssignmentResponse(BaseModel):
     status: str
     submission_id: Optional[str] = None
     marks_obtained: Optional[float] = None
+    feedback: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -51,6 +52,7 @@ class SubmissionResponse(BaseModel):
     file_url: str
     submitted_at: str
     marks_obtained: Optional[float] = None
+    max_marks: Optional[int] = 100
     feedback: Optional[str] = None
     status: str
 
@@ -79,11 +81,13 @@ def get_assignments(db: Session = Depends(get_db), current_user: User = Depends(
         status_val = "PENDING"
         sub_id = None
         marks = None
+        feedback_val = None
         
         if submission:
             status_val = submission.status.value
             sub_id = submission.id
             marks = submission.marks_obtained
+            feedback_val = submission.feedback
         elif assign.due_date and assign.due_date < datetime.utcnow():
             status_val = "LATE"
             
@@ -109,7 +113,8 @@ def get_assignments(db: Session = Depends(get_db), current_user: User = Depends(
             file_url=assign.file_url,
             status=status_val,
             submission_id=sub_id,
-            marks_obtained=marks
+            marks_obtained=marks,
+            feedback=feedback_val
         ))
         
     return result
@@ -285,6 +290,7 @@ def get_submissions(
 
     result = []
     for sub in submissions:
+        max_m = sub.assignment.max_marks if sub.assignment and sub.assignment.max_marks else 100
         result.append(SubmissionResponse(
             id=sub.id,
             assignment_id=sub.assignment_id,
@@ -294,6 +300,7 @@ def get_submissions(
             file_url=sub.file_url,
             submitted_at=sub.submitted_at.isoformat(),
             marks_obtained=sub.marks_obtained,
+            max_marks=max_m,
             feedback=sub.feedback,
             status=sub.status.value
         ))
@@ -311,6 +318,13 @@ async def grade_submission(
     submission = db.query(Submission).filter(Submission.id == submission_id).first()
     if not submission:
         raise HTTPException(status_code=404, detail="Submission not found")
+
+    max_m = submission.assignment.max_marks if submission.assignment and submission.assignment.max_marks else 100
+    if grade_data.marks_obtained < 0 or grade_data.marks_obtained > max_m:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Marks obtained ({grade_data.marks_obtained}) must be between 0 and {max_m}"
+        )
 
     submission.marks_obtained = grade_data.marks_obtained
     submission.feedback = grade_data.feedback
