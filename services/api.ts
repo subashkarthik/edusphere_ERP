@@ -396,11 +396,19 @@ export const certificatesApi = {
   getSettings: () => apiFetch<any>('/certificates/settings'),
   getCertificates: (isAdmin: boolean) =>
     apiFetch<any[]>(isAdmin ? '/certificates/all' : '/certificates/my-certificates'),
-  updateSettings: (data: { min_attendance_pct: number; min_assessment_pct: number }) =>
+  updateSettings: (data: { min_attendance_pct: number; min_assessment_pct: number; min_progress_pct?: number }) =>
     apiFetch<any>('/certificates/settings', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
   revokeCertificate: (certId: string) =>
     apiFetch<any>(`/certificates/revoke/${certId}`, { method: 'POST' }),
+  verify: async (code: string) => {
+    const res = await fetch(`/api/certificates/verify/${encodeURIComponent(code)}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Verification failed' }));
+      throw new Error(err.detail || 'Certificate not found or invalid.');
+    }
+    return res.json();
+  },
 };

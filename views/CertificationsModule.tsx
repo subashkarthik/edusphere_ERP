@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { 
   Award, CheckCircle2, AlertTriangle, Download, ShieldCheck, 
   Settings, RefreshCw, FileText, Lock, ExternalLink, X, Search,
-  Sliders, User, Check, XCircle
+  Sliders, User, Check, XCircle, Eye, ShieldAlert, Sparkles
 } from 'lucide-react';
 import { UserRole, UserProfile, CertificateRecord, CertificateSettings } from '../types';
-import { certificatesApi } from '../services/api';
+import { certificatesApi, getAccessToken } from '../services/api';
 
 interface CertificationsModuleProps {
   user: UserProfile;
@@ -13,6 +13,7 @@ interface CertificationsModuleProps {
 
 const CertificationsModule: React.FC<CertificationsModuleProps> = ({ user }) => {
   const isAdmin = user.role === UserRole.ADMIN;
+  const isFaculty = user.role === UserRole.FACULTY;
   const isStudent = user.role === UserRole.STUDENT;
 
   const [loading, setLoading] = useState<boolean>(true);
@@ -20,489 +21,545 @@ const CertificationsModule: React.FC<CertificationsModuleProps> = ({ user }) => 
   const [settings, setSettings] = useState<CertificateSettings>({
     org_id: 'org-edusphere',
     min_attendance_pct: 75,
-    min_assessment_pct: 60
+    min_assessment_pct: 50,
+    min_progress_pct: 100,
   });
 
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCert, setSelectedCert] = useState<CertificateRecord | null>(null);
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [editAttendanceThreshold, setEditAttendanceThreshold] = useState<number>(75);
-  const [editAssessmentThreshold, setEditAssessmentThreshold] = useState<number>(60);
+  const [editAssessmentThreshold, setEditAssessmentThreshold] = useState<number>(50);
+  const [editProgressThreshold, setEditProgressThreshold] = useState<number>(100);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  // Initial state for offline / fast fallback rendering using real uploaded courses
-  const defaultStudentCerts: CertificateRecord[] = [
-    {
-      id: 'cert-1',
-      user_id: user.id,
-      student_name: user.name,
-      course_id: 'vcourse-cyb-eth',
-      course_name: 'Ethical Hacking (Cyber Security)',
-      category: 'Cyber Security',
-      course_code: 'ETHICA',
-      total_lessons: 13,
-      completed_lessons: 13,
-      progress_pct: 100,
-      issued_date: '2026-08-02',
-      certificate_code: 'CERT-2026-ETHICA-8459',
-      certificate_url: '/api/certificates/download-pdf/CERT-2026-ETHICA-8459.pdf',
-      eligibility_status: 'ELIGIBLE',
-      attendance_pct: 95,
-      assessment_pct: 92
-    },
-    {
-      id: 'cert-2',
-      user_id: user.id,
-      student_name: user.name,
-      course_id: 'vcourse-pro-pyt',
-      course_name: 'Python Programming Masterclass',
-      category: 'Programming Languages',
-      course_code: 'PYTHON',
-      total_lessons: 11,
-      completed_lessons: 11,
-      progress_pct: 100,
-      issued_date: '2026-07-28',
-      certificate_code: 'CERT-2026-PYTHON-9420',
-      certificate_url: '/api/certificates/download-pdf/CERT-2026-PYTHON-9420.pdf',
-      eligibility_status: 'ELIGIBLE',
-      attendance_pct: 90,
-      assessment_pct: 88
-    },
-    {
-      id: 'cert-3',
-      user_id: user.id,
-      student_name: user.name,
-      course_id: 'vcourse-pro-sql',
-      course_name: 'SQL Database Engineering',
-      category: 'Programming Languages',
-      course_code: 'SQLENG',
-      total_lessons: 11,
-      completed_lessons: 5,
-      progress_pct: 45,
-      issued_date: 'In Progress',
-      certificate_code: 'CERT-2026-SQLENG-7731',
-      certificate_url: null,
-      eligibility_status: 'INELIGIBLE',
-      attendance_pct: 82,
-      assessment_pct: 55
-    },
-    {
-      id: 'cert-4',
-      user_id: user.id,
-      student_name: user.name,
-      course_id: 'vcourse-sof-com',
-      course_name: 'Corporate Communication Skills',
-      category: 'Soft Skills',
-      course_code: 'COMMSK',
-      total_lessons: 8,
-      completed_lessons: 8,
-      progress_pct: 100,
-      issued_date: '2026-07-15',
-      certificate_code: 'CERT-2026-COMMSK-3104',
-      certificate_url: '/api/certificates/download-pdf/CERT-2026-COMMSK-3104.pdf',
-      eligibility_status: 'ELIGIBLE',
-      attendance_pct: 98,
-      assessment_pct: 95
-    }
-  ];
-
-
-  const fetchCertificatesData = async () => {
+  const fetchCertificates = async () => {
     setLoading(true);
+    setActionError(null);
     try {
-      // Fetch Threshold Settings via centralized API client
-      const sData = await certificatesApi.getSettings();
-      if (sData) {
-        setSettings(sData);
-        setEditAttendanceThreshold(sData.min_attendance_pct);
-        setEditAssessmentThreshold(sData.min_assessment_pct);
+      // 1. Fetch threshold settings
+      const settingsData = await certificatesApi.getSettings();
+      if (settingsData) {
+        setSettings(settingsData);
+        setEditAttendanceThreshold(settingsData.min_attendance_pct ?? 75);
+        setEditAssessmentThreshold(settingsData.min_assessment_pct ?? 50);
+        setEditProgressThreshold(settingsData.min_progress_pct ?? 100);
       }
 
-      // Fetch Certificates according to role via centralized API client
-      const cData = await certificatesApi.getCertificates(isAdmin);
-      setCertificates(cData && cData.length > 0 ? cData : defaultStudentCerts);
-    } catch (e) {
-      console.warn('API unavailable, falling back to local state:', e);
-      setCertificates(defaultStudentCerts);
+      // 2. Fetch student or admin/faculty certificates
+      const certsData = await certificatesApi.getCertificates(isAdmin || isFaculty);
+      setCertificates(Array.isArray(certsData) ? certsData : []);
+    } catch (err: any) {
+      console.error('[CertificatesModule] Fetch error:', err);
+      setActionError(err.message || 'Failed to fetch certificates from the server.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchCertificatesData();
-  }, [user.role]);
+    fetchCertificates();
+  }, [user.id, user.role]);
 
-  const handleUpdateThresholds = async () => {
+  const handleUpdateSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
     try {
-      await certificatesApi.updateSettings({
+      const res = await certificatesApi.updateSettings({
         min_attendance_pct: editAttendanceThreshold,
-        min_assessment_pct: editAssessmentThreshold
+        min_assessment_pct: editAssessmentThreshold,
+        min_progress_pct: editProgressThreshold,
       });
-      setSettings({
-        org_id: settings.org_id,
-        min_attendance_pct: editAttendanceThreshold,
-        min_assessment_pct: editAssessmentThreshold
-      });
-      setActionSuccess('Certificate eligibility thresholds updated & re-evaluated!');
+      setSettings(res);
       setShowSettingsModal(false);
-      fetchCertificatesData();
+      setActionSuccess('Certification issuance criteria updated successfully!');
       setTimeout(() => setActionSuccess(null), 4000);
-    } catch (e) {
-      // Fallback update
-      setSettings({
-        org_id: settings.org_id,
-        min_attendance_pct: editAttendanceThreshold,
-        min_assessment_pct: editAssessmentThreshold
-      });
-      setShowSettingsModal(false);
+      fetchCertificates();
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to update certification settings.');
     }
   };
 
-  const handleRevokeCertificate = async (certId: string) => {
+  const handleRevoke = async (certId: string, certCode?: string | null) => {
+    const target = certCode || certId;
+    if (!window.confirm(`Are you sure you want to permanently revoke certificate ${target}?`)) return;
+
     try {
       await certificatesApi.revokeCertificate(certId);
-      setActionSuccess('Certificate revoked successfully.');
-      fetchCertificatesData();
+      setActionSuccess(`Certificate ${target} has been revoked.`);
       setTimeout(() => setActionSuccess(null), 4000);
-    } catch (e) {
-      setCertificates(prev => prev.map(c => c.id === certId ? { ...c, eligibility_status: 'REVOKED' } : c));
+      fetchCertificates();
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to revoke certificate.');
     }
   };
 
-  const filteredCerts = certificates.filter(c => 
-    c.course_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.certificate_code.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const handleDownloadPdf = async (certCode: string) => {
+    try {
+      const token = getAccessToken();
+      const res = await fetch(`/api/certificates/download-pdf/${certCode}.pdf`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Download failed' }));
+        throw new Error(err.detail || 'Download failed');
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${certCode}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      alert(err.message || 'Failed to download certificate PDF.');
+    }
+  };
+
+  const filteredCerts = certificates.filter(c => {
+    const s = searchTerm.toLowerCase();
+    return (
+      c.course_name?.toLowerCase().includes(s) ||
+      c.course_code?.toLowerCase().includes(s) ||
+      c.student_name?.toLowerCase().includes(s) ||
+      c.certificate_code?.toLowerCase().includes(s)
+    );
+  });
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-6 animate-in fade-in duration-300 font-sans pb-12">
       {/* Header Banner */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-900 via-slate-900 to-violet-950 p-6 md:p-8 text-white shadow-2xl border border-indigo-500/20">
-        <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="p-2.5 rounded-xl bg-indigo-500/20 border border-indigo-400/30 backdrop-blur-md">
-                <Award className="w-7 h-7 text-indigo-300" />
-              </div>
-              <span className="text-xs font-semibold uppercase tracking-wider text-indigo-300 bg-indigo-500/20 px-3 py-1 rounded-full border border-indigo-400/20">
-                Institutional Credential Engine
-              </span>
+      <div className="relative overflow-hidden rounded-3xl p-6 md:p-8 border border-white/10 bg-gradient-to-br from-indigo-950/40 via-slate-900/60 to-purple-950/30 backdrop-blur-xl shadow-2xl">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 rounded-full text-xs font-black uppercase tracking-widest">
+              <Award size={14} /> Integrated Academic Certification Engine
             </div>
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white">
-              {isAdmin ? 'University Certificate Control Center' : 'Academic Certifications & Degree Vault'}
+            <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight">
+              Institutional <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-300 to-emerald-400">Certificates & Credentials</span>
             </h1>
-            <p className="mt-1 text-sm text-indigo-200/80 max-w-2xl">
-              Automated dual-threshold certification engine evaluating attendance (% $\ge$ {settings.min_attendance_pct}%) and examination performance (% $\ge$ {settings.min_assessment_pct}%) with ReportLab cryptographically verifiable PDF generation.
+            <p className="text-xs md:text-sm text-slate-300 font-medium max-w-2xl">
+              Strict 3-pillar criteria verification: Attendance &ge; {settings.min_attendance_pct}%, Assessment &ge; {settings.min_assessment_pct}%, and Syllabus Progress &ge; {settings.min_progress_pct ?? 100}%.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             {isAdmin && (
               <button
                 onClick={() => setShowSettingsModal(true)}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium text-sm border border-white/20 transition-all shadow-lg backdrop-blur-md"
+                className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold flex items-center gap-2 border border-white/10 transition-all active:scale-95"
               >
-                <Sliders className="w-4 h-4 text-indigo-300" />
-                <span>Configure Thresholds</span>
+                <Sliders size={16} /> Criteria Thresholds
               </button>
             )}
-
             <button
-              onClick={fetchCertificatesData}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm transition-all shadow-lg shadow-indigo-600/30"
+              onClick={fetchCertificates}
+              disabled={loading}
+              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-indigo-600/30 transition-all active:scale-95"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-              <span>Run Auto-Evaluation</span>
+              <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> Refresh Ledger
             </button>
           </div>
         </div>
-
-        {/* Global Threshold Rules Summary Pills */}
-        <div className="mt-6 pt-6 border-t border-white/10 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-          <div className="flex items-center gap-3 bg-white/5 rounded-xl p-3 border border-white/10">
-            <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
-            <div>
-              <div className="text-indigo-200">Attendance Threshold</div>
-              <div className="font-bold text-sm text-white">{settings.min_attendance_pct}% Minimum</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 bg-white/5 rounded-xl p-3 border border-white/10">
-            <FileText className="w-5 h-5 text-amber-400 shrink-0" />
-            <div>
-              <div className="text-indigo-200">Assessment Score Threshold</div>
-              <div className="font-bold text-sm text-white">{settings.min_assessment_pct}% Minimum</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 bg-white/5 rounded-xl p-3 border border-white/10">
-            <CheckCircle2 className="w-5 h-5 text-teal-400 shrink-0" />
-            <div>
-              <div className="text-indigo-200">Verification Hash Format</div>
-              <div className="font-mono text-xs text-teal-300 font-semibold">CERT-2026-XXXX</div>
-            </div>
-          </div>
-        </div>
       </div>
 
+      {/* Notifications */}
       {actionSuccess && (
-        <div className="p-4 rounded-xl bg-emerald-950/80 border border-emerald-500/30 text-emerald-200 text-sm flex items-center justify-between shadow-lg">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-            <span>{actionSuccess}</span>
-          </div>
-          <button onClick={() => setActionSuccess(null)} className="text-emerald-400 hover:text-white">
-            <X className="w-4 h-4" />
-          </button>
+        <div className="p-4 bg-emerald-500/15 border border-emerald-500/30 rounded-2xl flex items-center gap-3 text-emerald-300 text-xs font-bold animate-in fade-in">
+          <CheckCircle2 size={18} className="shrink-0 text-emerald-400" />
+          <span>{actionSuccess}</span>
+        </div>
+      )}
+      {actionError && (
+        <div className="p-4 bg-rose-500/15 border border-rose-500/30 rounded-2xl flex items-center gap-3 text-rose-300 text-xs font-bold animate-in fade-in">
+          <AlertTriangle size={18} className="shrink-0 text-rose-400" />
+          <span>{actionError}</span>
         </div>
       )}
 
-      {/* Search & Filter Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-900/60 backdrop-blur-xl p-4 rounded-2xl border border-slate-800">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 absolute left-3.5 top-3.5 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search certificate code, course, or student..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-all"
-          />
-        </div>
-        <div className="text-xs text-slate-400 flex items-center gap-2">
-          <span>Showing <strong className="text-white">{filteredCerts.length}</strong> certificates</span>
-        </div>
+      {/* Search Bar */}
+      <div className="glass-panel p-3 rounded-2xl flex items-center gap-3">
+        <Search size={18} className="text-slate-400 ml-2" />
+        <input
+          type="text"
+          placeholder={isStudent ? "Search your enrolled courses..." : "Search students, course codes, or certificate IDs..."}
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full bg-transparent border-none outline-none text-xs text-white placeholder-slate-500 font-medium"
+        />
       </div>
 
-      {/* Certificate Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredCerts.map((cert) => {
-          const isPassed = cert.eligibility_status === 'ISSUED' || cert.eligibility_status === 'ELIGIBLE';
-          const isRevoked = cert.eligibility_status === 'REVOKED';
-          const attendancePassed = cert.attendance_pct >= settings.min_attendance_pct;
-          const assessmentPassed = cert.assessment_pct >= settings.min_assessment_pct;
+      {/* STUDENT VIEW */}
+      {isStudent && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-black uppercase tracking-wider text-slate-300">
+              Enrolled Courses &amp; Certification Eligibility
+            </h2>
+            <span className="text-xs text-slate-400 font-medium">
+              {filteredCerts.length} Course{filteredCerts.length !== 1 ? 's' : ''} Enrolled
+            </span>
+          </div>
 
-          return (
-            <div
-              key={cert.id}
-              className={`group relative rounded-2xl border transition-all duration-300 overflow-hidden flex flex-col justify-between ${
-                isPassed
-                  ? 'bg-slate-900/80 border-indigo-500/30 hover:border-indigo-500/60 hover:shadow-xl hover:shadow-indigo-500/10'
-                  : isRevoked
-                  ? 'bg-red-950/20 border-red-800/40 opacity-75'
-                  : 'bg-slate-900/50 border-slate-800 hover:border-slate-700'
-              }`}
-            >
-              {/* Top Accent Line */}
-              <div className={`h-1.5 w-full ${
-                isPassed ? 'bg-gradient-to-r from-indigo-500 via-teal-400 to-emerald-400' : isRevoked ? 'bg-red-500' : 'bg-amber-500'
-              }`} />
+          {loading ? (
+            <div className="p-12 text-center text-slate-400 text-xs font-bold flex flex-col items-center gap-3 glass-panel rounded-3xl">
+              <RefreshCw size={24} className="animate-spin text-indigo-400" />
+              Evaluating academic records, attendance ledgers, and quiz assessments...
+            </div>
+          ) : filteredCerts.length === 0 ? (
+            <div className="p-12 text-center text-slate-400 text-xs font-bold glass-panel rounded-3xl space-y-2">
+              <Award size={32} className="mx-auto text-slate-500 mb-2" />
+              <p className="text-white text-sm font-black">No Course Enrollments Found</p>
+              <p className="text-slate-400 text-xs">Enroll in courses from the Course Catalog to track your academic certification progress.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredCerts.map((cert) => {
+                const attnMet = cert.attendance_pct >= (cert.attendance_threshold ?? settings.min_attendance_pct);
+                const assessMet = cert.assessment_pct >= (cert.assessment_threshold ?? settings.min_assessment_pct);
+                const progMet = (cert.progress_pct ?? 0) >= (settings.min_progress_pct ?? 100);
+                const isFullyEligible = cert.is_eligible ?? (attnMet && assessMet && progMet);
+                const isIssued = cert.eligibility_status === 'ISSUED';
+                const isRevoked = cert.eligibility_status === 'REVOKED';
 
-              <div className="p-6 space-y-4">
-                {/* Status Badge & Code */}
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-xs text-slate-400 font-medium px-2.5 py-1 rounded-md bg-slate-800 border border-slate-700">
-                    {cert.certificate_code}
-                  </span>
+                return (
+                  <div 
+                    key={cert.id || cert.course_id}
+                    className={`glass-panel p-6 rounded-3xl border transition-all space-y-5 ${
+                      isRevoked 
+                        ? 'border-rose-500/30 bg-rose-500/5' 
+                        : isIssued 
+                          ? 'border-emerald-500/30 bg-emerald-500/5 hover:border-emerald-500/50' 
+                          : 'border-white/10 hover:border-white/20'
+                    }`}
+                  >
+                    {/* Header: Course Code & Status Badge */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <span className="px-2.5 py-1 bg-indigo-500/20 text-indigo-300 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider">
+                          {cert.course_code || 'COURSE'}
+                        </span>
+                        <h3 className="text-base font-black text-white mt-2 leading-tight">
+                          {cert.course_name}
+                        </h3>
+                      </div>
 
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 ${
-                    isPassed
-                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                      : isRevoked
-                      ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                      : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                  }`}>
-                    {isPassed ? (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    ) : isRevoked ? (
-                      <XCircle className="w-3.5 h-3.5 text-red-400" />
-                    ) : (
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                      <div>
+                        {isRevoked ? (
+                          <span className="px-3 py-1 bg-rose-500/20 border border-rose-500/30 text-rose-400 rounded-full text-[10px] font-black uppercase tracking-widest inline-flex items-center gap-1">
+                            <ShieldAlert size={12} /> Revoked
+                          </span>
+                        ) : isIssued ? (
+                          <span className="px-3 py-1 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-full text-[10px] font-black uppercase tracking-widest inline-flex items-center gap-1">
+                            <CheckCircle2 size={12} /> Issued
+                          </span>
+                        ) : (
+                          <span className="px-3 py-1 bg-amber-500/20 border border-amber-500/30 text-amber-400 rounded-full text-[10px] font-black uppercase tracking-widest inline-flex items-center gap-1">
+                            <Lock size={12} /> In Progress
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 3-Pillar Eligibility Checklist */}
+                    <div className="p-3.5 bg-black/40 border border-white/5 rounded-2xl space-y-2 text-xs">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-1">
+                        Criteria Evaluation Checklist
+                      </span>
+
+                      {/* 1. Attendance */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-300 font-medium">Attendance Requirement (&ge;{cert.attendance_threshold ?? settings.min_attendance_pct}%):</span>
+                        <span className={`font-mono font-bold inline-flex items-center gap-1 ${attnMet ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {cert.attendance_pct}% {attnMet ? <Check size={14} /> : <XCircle size={14} />}
+                        </span>
+                      </div>
+
+                      {/* 2. Assessment Score */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-300 font-medium">Assessment Score (&ge;{cert.assessment_threshold ?? settings.min_assessment_pct}%):</span>
+                        <span className={`font-mono font-bold inline-flex items-center gap-1 ${assessMet ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {cert.assessment_pct}% {assessMet ? <Check size={14} /> : <XCircle size={14} />}
+                        </span>
+                      </div>
+
+                      {/* 3. Syllabus Progress */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-300 font-medium">Course Progress (== 100%):</span>
+                        <span className={`font-mono font-bold inline-flex items-center gap-1 ${progMet ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {cert.progress_pct ?? 0}% {progMet ? <Check size={14} /> : <XCircle size={14} />}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Certificate Code Info */}
+                    {cert.certificate_code && (
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+                        <span>Code: <strong className="font-mono text-white">{cert.certificate_code}</strong></span>
+                        <span>Issued: {cert.issued_date}</span>
+                      </div>
                     )}
-                    {cert.eligibility_status}
-                  </span>
-                </div>
 
-                {/* Title & Student */}
-                <div>
-                  <h3 className="font-bold text-lg text-white group-hover:text-indigo-300 transition-colors line-clamp-2">
-                    {cert.course_name}
-                  </h3>
-                  <div className="flex items-center gap-2 mt-1 text-xs text-slate-400">
-                    <User className="w-3.5 h-3.5 text-slate-500" />
-                    <span className="text-slate-300 font-medium">{cert.student_name}</span>
-                    <span className="text-slate-600">•</span>
-                    <span className="text-slate-400">{cert.course_code}</span>
-                  </div>
-                </div>
-
-                {/* Dual Threshold Metrics */}
-                <div className="space-y-3 pt-2">
-                  {/* Attendance Bar */}
-                  <div>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="text-slate-400 flex items-center gap-1">
-                        Attendance Rate 
-                        <span className={`font-semibold ${attendancePassed ? 'text-emerald-400' : 'text-amber-400'}`}>
-                          ({cert.attendance_pct}%)
-                        </span>
-                      </span>
-                      <span className="text-slate-500">Req: {settings.min_attendance_pct}%</span>
-                    </div>
-                    <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          attendancePassed ? 'bg-emerald-500' : 'bg-amber-500'
-                        }`}
-                        style={{ width: `${Math.min(cert.attendance_pct, 100)}%` }}
-                      />
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-2 pt-2 border-t border-white/5">
+                      {isIssued && cert.certificate_code ? (
+                        <>
+                          <button
+                            onClick={() => handleDownloadPdf(cert.certificate_code!)}
+                            className="flex-1 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition-all active:scale-95"
+                          >
+                            <Download size={15} /> Download PDF
+                          </button>
+                          <a
+                            href={`/verify/${cert.certificate_code}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
+                            title="Verify Authentic QR Link"
+                          >
+                            <ExternalLink size={14} /> Verify
+                          </a>
+                        </>
+                      ) : (
+                        <button
+                          disabled
+                          className="w-full px-4 py-2.5 bg-white/5 border border-white/10 text-slate-400 rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-not-allowed"
+                        >
+                          <Lock size={14} /> Requirements Pending (Not Eligible)
+                        </button>
+                      )}
                     </div>
                   </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
-                  {/* Assessment Bar */}
-                  <div>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="text-slate-400 flex items-center gap-1">
-                        Assessment Score 
-                        <span className={`font-semibold ${assessmentPassed ? 'text-indigo-400' : 'text-amber-400'}`}>
-                          ({cert.assessment_pct}%)
-                        </span>
-                      </span>
-                      <span className="text-slate-500">Req: {settings.min_assessment_pct}%</span>
-                    </div>
-                    <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          assessmentPassed ? 'bg-indigo-500' : 'bg-amber-500'
-                        }`}
-                        style={{ width: `${Math.min(cert.assessment_pct, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
+      {/* FACULTY / ADMIN VIEW */}
+      {(isAdmin || isFaculty) && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-black uppercase tracking-wider text-slate-300">
+              Issued Certificates &amp; Student Evaluations Ledger
+            </h2>
+            <span className="text-xs text-slate-400 font-medium">
+              {filteredCerts.length} Record{filteredCerts.length !== 1 ? 's' : ''}
+            </span>
+          </div>
 
-              {/* Bottom Actions */}
-              <div className="p-4 bg-slate-950/40 border-t border-slate-800/80 flex items-center justify-between gap-3">
-                <span className="text-xs text-slate-500">
-                  {cert.issued_date !== 'Pending Requirements' ? `Issued: ${cert.issued_date}` : 'Awaiting requirements'}
-                </span>
-
-                <div className="flex items-center gap-2">
-                  {isAdmin && !isRevoked && (
-                    <button
-                      onClick={() => handleRevokeCertificate(cert.id)}
-                      className="px-3 py-1.5 text-xs font-semibold text-red-400 hover:bg-red-500/10 border border-red-500/20 rounded-lg transition-all"
-                    >
-                      Revoke
-                    </button>
-                  )}
-
-                  {isPassed ? (
-                    <a
-                      href={cert.certificate_url || `/api/certificates/download-pdf/${cert.certificate_code}.pdf`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-all shadow-md shadow-indigo-600/20 active:scale-95"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>PDF Certificate</span>
-                    </a>
+          <div className="glass-panel rounded-3xl overflow-hidden border border-white/10 shadow-xl">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-white/5 border-b border-white/10 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    <th className="py-3.5 px-4">Student</th>
+                    <th className="py-3.5 px-4">Course</th>
+                    <th className="py-3.5 px-4">Attendance</th>
+                    <th className="py-3.5 px-4">Assessment</th>
+                    <th className="py-3.5 px-4">Progress</th>
+                    <th className="py-3.5 px-4">Certificate ID</th>
+                    <th className="py-3.5 px-4">Status</th>
+                    <th className="py-3.5 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5 font-medium">
+                  {loading ? (
+                    <tr>
+                      <td colSpan={8} className="py-8 text-center text-slate-400">
+                        <RefreshCw size={20} className="animate-spin mx-auto text-indigo-400 mb-2" />
+                        Loading certificate records...
+                      </td>
+                    </tr>
+                  ) : filteredCerts.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-8 text-center text-slate-400 font-bold">
+                        No certificate evaluations matching search criteria.
+                      </td>
+                    </tr>
                   ) : (
-                    <button
-                      disabled
-                      title="Watch 100% of course video lessons to generate & unlock official PDF certificate"
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-slate-800/80 text-slate-400 rounded-lg cursor-not-allowed opacity-80 border border-slate-700/80"
-                    >
-                      <Lock className="w-3.5 h-3.5 text-amber-400" />
-                      <span>PDF Certificate (Locked)</span>
-                    </button>
+                    filteredCerts.map((cert) => {
+                      const isRevoked = cert.eligibility_status === 'REVOKED';
+                      const isIssued = cert.eligibility_status === 'ISSUED';
+
+                      return (
+                        <tr key={cert.id} className="hover:bg-white/[0.02] transition-colors">
+                          <td className="py-3.5 px-4">
+                            <div className="font-bold text-white">{cert.student_name}</div>
+                            <div className="text-[10px] text-slate-400">{cert.student_email}</div>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <div className="font-bold text-indigo-300">{cert.course_name}</div>
+                            <div className="text-[10px] text-slate-400 font-mono">{cert.course_code}</div>
+                          </td>
+                          <td className="py-3.5 px-4 font-mono font-bold">
+                            <span className={cert.attendance_pct >= settings.min_attendance_pct ? 'text-emerald-400' : 'text-rose-400'}>
+                              {cert.attendance_pct}%
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 font-mono font-bold">
+                            <span className={cert.assessment_pct >= settings.min_assessment_pct ? 'text-emerald-400' : 'text-rose-400'}>
+                              {cert.assessment_pct}%
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 font-mono font-bold">
+                            <span className={(cert.progress_pct ?? 100) >= (settings.min_progress_pct ?? 100) ? 'text-emerald-400' : 'text-rose-400'}>
+                              {cert.progress_pct ?? 100}%
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 font-mono text-[11px] text-slate-300">
+                            {cert.certificate_code || '—'}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            {isRevoked ? (
+                              <span className="px-2.5 py-0.5 bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-full text-[10px] font-black uppercase">
+                                REVOKED
+                              </span>
+                            ) : isIssued ? (
+                              <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full text-[10px] font-black uppercase">
+                                ISSUED
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-0.5 bg-slate-500/20 text-slate-400 border border-slate-500/30 rounded-full text-[10px] font-black uppercase">
+                                INELIGIBLE
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              {cert.certificate_code && isIssued && (
+                                <button
+                                  onClick={() => handleDownloadPdf(cert.certificate_code!)}
+                                  className="p-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
+                                  title="Download PDF"
+                                >
+                                  <Download size={14} />
+                                </button>
+                              )}
+                              {cert.certificate_code && (
+                                <a
+                                  href={`/verify/${cert.certificate_code}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="p-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 rounded-lg transition-colors"
+                                  title="Open Public Verification"
+                                >
+                                  <ExternalLink size={14} />
+                                </a>
+                              )}
+                              {isAdmin && !isRevoked && (
+                                <button
+                                  onClick={() => handleRevoke(cert.id, cert.certificate_code)}
+                                  className="px-2.5 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 rounded-lg text-[10px] font-black uppercase transition-all"
+                                  title="Revoke Certificate"
+                                >
+                                  Revoke
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
-                </div>
-              </div>
+                </tbody>
+              </table>
             </div>
-          );
-        })}
-      </div>
+          </div>
+        </div>
+      )}
 
-
-      {/* Admin Thresholds Modal */}
+      {/* Threshold Settings Modal for Admin */}
       {showSettingsModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl text-white space-y-6 animate-in fade-in zoom-in duration-200">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <div className="flex items-center gap-2.5">
-                <Sliders className="w-5 h-5 text-indigo-400" />
-                <h3 className="font-bold text-lg">Certificate Rules Configurator</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="glass-panel p-6 md:p-8 rounded-3xl w-full max-w-md border border-white/20 shadow-2xl relative">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-2">
+                <Sliders size={20} className="text-indigo-400" />
+                <h3 className="text-lg font-black text-white">Certification Thresholds</h3>
               </div>
-              <button onClick={() => setShowSettingsModal(false)} className="text-slate-400 hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-5">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">
-                  Min Attendance Percentage Threshold (%)
-                </label>
-                <div className="flex items-center gap-4">
-                  <input
-                    type="range"
-                    min="50"
-                    max="100"
-                    value={editAttendanceThreshold}
-                    onChange={(e) => setEditAttendanceThreshold(Number(e.target.value))}
-                    className="w-full accent-indigo-500"
-                  />
-                  <span className="font-mono text-sm font-bold text-indigo-400 min-w-12 text-right">
-                    {editAttendanceThreshold}%
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">
-                  Min Assessment / Exam Score Threshold (%)
-                </label>
-                <div className="flex items-center gap-4">
-                  <input
-                    type="range"
-                    min="40"
-                    max="100"
-                    value={editAssessmentThreshold}
-                    onChange={(e) => setEditAssessmentThreshold(Number(e.target.value))}
-                    className="w-full accent-indigo-500"
-                  />
-                  <span className="font-mono text-sm font-bold text-indigo-400 min-w-12 text-right">
-                    {editAssessmentThreshold}%
-                  </span>
-                </div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-800/80 text-xs text-slate-400 border border-slate-700">
-                <p>
-                  <strong>Note:</strong> Updating these business rules will automatically re-evaluate eligibility for all students enrolled across institutional courses.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
               <button
                 onClick={() => setShowSettingsModal(false)}
-                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700"
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
               >
-                Cancel
-              </button>
-              <button
-                onClick={handleUpdateThresholds}
-                className="px-5 py-2 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-600/30"
-              >
-                Apply & Re-evaluate
+                <X size={18} />
               </button>
             </div>
+
+            <form onSubmit={handleUpdateSettings} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1.5 uppercase tracking-wider">
+                  Minimum Attendance Percentage (%):
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={editAttendanceThreshold}
+                  onChange={(e) => setEditAttendanceThreshold(Number(e.target.value))}
+                  className="w-full glass-input rounded-xl p-3 text-sm font-bold text-white"
+                  required
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">Default: 75% required attendance across sessions.</span>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1.5 uppercase tracking-wider">
+                  Minimum Assessment Score Percentage (%):
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={editAssessmentThreshold}
+                  onChange={(e) => setEditAssessmentThreshold(Number(e.target.value))}
+                  className="w-full glass-input rounded-xl p-3 text-sm font-bold text-white"
+                  required
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">Default: 50% combined score in quizzes & assignments.</span>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1.5 uppercase tracking-wider">
+                  Course Syllabus Progress Percentage (%):
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={editProgressThreshold}
+                  onChange={(e) => setEditProgressThreshold(Number(e.target.value))}
+                  className="w-full glass-input rounded-xl p-3 text-sm font-bold text-white"
+                  required
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">Default: 100% completion of course lessons.</span>
+              </div>
+
+              <div className="flex items-center gap-3 pt-4 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setShowSettingsModal(false)}
+                  className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-indigo-600/30 transition-all"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

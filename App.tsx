@@ -285,7 +285,7 @@ const App: React.FC = () => {
 
   if (showSplash) return <SplashScreen />;
 
-  if (window.location.pathname.startsWith('/verify-certificate')) {
+  if (window.location.pathname.startsWith('/verify-certificate') || window.location.pathname.startsWith('/verify')) {
     return <CertificateVerification />;
   }
   if (window.location.pathname.startsWith('/public-catalog')) {

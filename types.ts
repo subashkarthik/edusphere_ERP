@@ -172,15 +172,22 @@ export interface CertificateRecord {
   course_name: string;
   course_code: string;
   category?: string;
+  department?: string;
   total_lessons?: number;
   completed_lessons?: number;
   progress_pct?: number;
+  progress_met?: boolean;
+  attendance_pct: number;
+  attendance_met?: boolean;
+  attendance_threshold?: number;
+  assessment_pct: number;
+  assessment_met?: boolean;
+  assessment_threshold?: number;
+  is_eligible?: boolean;
   issued_date: string;
-  certificate_code: string;
+  certificate_code?: string | null;
   certificate_url?: string | null;
   eligibility_status: 'ELIGIBLE' | 'ISSUED' | 'REVOKED' | 'INELIGIBLE';
-  attendance_pct: number;
-  assessment_pct: number;
 }
 
 
@@ -188,6 +195,7 @@ export interface CertificateSettings {
   org_id: string;
   min_attendance_pct: number;
   min_assessment_pct: number;
+  min_progress_pct?: number;
   updated_at?: string;
 }
 

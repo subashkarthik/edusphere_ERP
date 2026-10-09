@@ -192,7 +192,7 @@ def test_assignment_full_workflow_and_certificate_score(assignment_test_data):
     # 8. Certificate calculation uses the graded marks
     db = SessionLocal()
     try:
-        _, assessment_pct = calculate_student_metrics(db, student_id, course_id)
+        _, assessment_pct, _ = calculate_student_metrics(db, student_id, course_id)
         assert assessment_pct == 95.0
     finally:
         db.close()

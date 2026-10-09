@@ -25,6 +25,7 @@ class Certificate(Base):
     eligibility_status: Mapped[CertificateStatus] = mapped_column(SAEnum(CertificateStatus), default=CertificateStatus.ISSUED)
     attendance_pct: Mapped[float] = mapped_column(Float, default=0.0)
     assessment_pct: Mapped[float] = mapped_column(Float, default=0.0)
+    progress_pct: Mapped[float] = mapped_column(Float, default=0.0)
     org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, default="org-edusphere")
 
     # Relationships
@@ -41,7 +42,8 @@ class CertificateSetting(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     org_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True, default="org-edusphere")
     min_attendance_pct: Mapped[float] = mapped_column(Float, default=75.0)
-    min_assessment_pct: Mapped[float] = mapped_column(Float, default=60.0)
+    min_assessment_pct: Mapped[float] = mapped_column(Float, default=50.0)
+    min_progress_pct: Mapped[float] = mapped_column(Float, default=100.0)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def __repr__(self):

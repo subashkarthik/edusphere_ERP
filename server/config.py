@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     S3_BUCKET_NAME: str = "edusphere-course-assets"
     S3_REGION: str = "us-east-1"
     S3_CDN_BASE_URL: str = "https://edusphere-course-assets.s3.us-east-1.amazonaws.com"
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
     @property
     def cors_origins_list(self) -> List[str]:

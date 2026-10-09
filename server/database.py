@@ -56,6 +56,27 @@ else:
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+def _run_schema_migrations():
+    try:
+        from sqlalchemy import text
+        with engine.begin() as conn:
+            if not is_sqlite:
+                conn.execute(text("ALTER TABLE certificates ADD COLUMN IF NOT EXISTS progress_pct FLOAT DEFAULT 0.0;"))
+                conn.execute(text("ALTER TABLE certificate_settings ADD COLUMN IF NOT EXISTS min_progress_pct FLOAT DEFAULT 100.0;"))
+            else:
+                try:
+                    conn.execute(text("ALTER TABLE certificates ADD COLUMN progress_pct FLOAT DEFAULT 0.0;"))
+                except Exception:
+                    pass
+                try:
+                    conn.execute(text("ALTER TABLE certificate_settings ADD COLUMN min_progress_pct FLOAT DEFAULT 100.0;"))
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"[DB MIGRATION NOTE] {e}")
+
+_run_schema_migrations()
+
 
 class Base(DeclarativeBase):
     pass
