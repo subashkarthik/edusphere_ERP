@@ -19,6 +19,12 @@ const FacultyCMS: React.FC<FacultyCMSProps> = ({ role = 'FACULTY' }) => {
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   
+  // State for enrolled students modal
+  const [viewStudentsCourse, setViewStudentsCourse] = useState<any | null>(null);
+  const [enrolledStudents, setEnrolledStudents] = useState<any[]>([]);
+  const [loadingStudents, setLoadingStudents] = useState(false);
+  const [studentsError, setStudentsError] = useState<string | null>(null);
+  
   // State for new course
   const [newCourse, setNewCourse] = useState({ name: '', code: '', description: '', credits: 4 });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -70,6 +76,21 @@ const FacultyCMS: React.FC<FacultyCMSProps> = ({ role = 'FACULTY' }) => {
       } catch (err) {
         alert('Failed to delete course. It may have active enrollments.');
       }
+    }
+  };
+
+  const handleViewStudents = async (course: any) => {
+    setViewStudentsCourse(course);
+    setLoadingStudents(true);
+    setStudentsError(null);
+    try {
+      const data = await cmsApi.getEnrolledStudents(course.id);
+      setEnrolledStudents(data.students || []);
+    } catch (err: any) {
+      setStudentsError(err.message || 'Failed to fetch enrolled students');
+      setEnrolledStudents([]);
+    } finally {
+      setLoadingStudents(false);
     }
   };
 
@@ -219,14 +240,26 @@ const FacultyCMS: React.FC<FacultyCMSProps> = ({ role = 'FACULTY' }) => {
                               {course.approval_status === 'ACTIVE' ? 'Active' : 'Pending'}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleViewStudents(course)}
+                            className="flex items-center gap-2 px-2.5 py-1 rounded-xl glass hover:bg-white/10 text-slate-300 hover:text-white transition"
+                            title="Click to view enrolled student roster"
+                          >
                             <Users size={12} className="text-indigo-400"/>
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{course.enrolled_count || 0} Students</span>
-                          </div>
+                            <span className="text-[10px] font-black uppercase tracking-widest">{course.enrolled_count || 0} Students</span>
+                          </button>
                       </div>
 
                       <div className="flex flex-col gap-2 relative z-10">
-                        <button className="w-full py-3 glass-btn text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 rounded-2xl hover:text-white transition-all flex items-center justify-center gap-2 group/btn">
+                        <button 
+                          onClick={() => handleViewStudents(course)}
+                          className="w-full py-2.5 glass-btn text-[10px] font-black uppercase tracking-widest text-indigo-300 rounded-xl hover:text-white transition-all flex items-center justify-center gap-2"
+                        >
+                          <Users size={14} /> View Enrolled Students ({course.enrolled_count || 0})
+                        </button>
+
+                        <button className="w-full py-2.5 glass-btn text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 rounded-xl hover:text-white transition-all flex items-center justify-center gap-2 group/btn">
                           Manage Curriculum <ChevronRight size={14} className="group-hover/btn:translate-x-1 transition-transform"/>
                         </button>
                         
@@ -435,6 +468,79 @@ const FacultyCMS: React.FC<FacultyCMSProps> = ({ role = 'FACULTY' }) => {
                 {isSubmitting ? 'Syncing...' : 'Deploy Institutional Module'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Enrolled Students Modal */}
+      {viewStudentsCourse && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl glass-sidebar rounded-[2.5rem] p-8 md:p-10 border border-white/10 animate-in zoom-in-95 duration-300 max-h-[85vh] flex flex-col">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <span className="px-2.5 py-1 glass rounded-lg text-[10px] font-black text-indigo-400 uppercase tracking-widest border border-indigo-500/20">
+                  {viewStudentsCourse.code}
+                </span>
+                <h2 className="text-xl font-black text-white tracking-tight mt-2">{viewStudentsCourse.name}</h2>
+                <p className="text-xs text-slate-400 font-medium mt-0.5">Enrolled Student Roster</p>
+              </div>
+              <button 
+                onClick={() => setViewStudentsCourse(null)} 
+                className="p-2.5 glass rounded-2xl text-slate-400 hover:text-white transition-colors"
+              >
+                <Trash2 size={18} className="hidden" />
+                <span className="font-bold text-xs px-2">✕ Close</span>
+              </button>
+            </div>
+
+            {loadingStudents ? (
+              <div className="py-16 flex flex-col items-center justify-center gap-3 text-slate-400 text-xs font-bold">
+                <Loader2 size={28} className="animate-spin text-indigo-400" />
+                <span>Loading enrolled student records...</span>
+              </div>
+            ) : studentsError ? (
+              <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-rose-300 text-xs font-bold flex items-center gap-2">
+                <AlertCircle size={16} />
+                <span>{studentsError}</span>
+              </div>
+            ) : enrolledStudents.length === 0 ? (
+              <div className="py-16 text-center text-slate-400 text-xs font-medium border border-dashed border-white/10 rounded-2xl">
+                No students currently enrolled in this course module.
+              </div>
+            ) : (
+              <div className="overflow-y-auto flex-1 space-y-3 pr-1 scrollbar-hide">
+                <div className="flex justify-between items-center px-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  <span>Enrolled Candidates ({enrolledStudents.length})</span>
+                  <span>Status</span>
+                </div>
+                {enrolledStudents.map((st, idx) => (
+                  <div key={st.enrollment_id || idx} className="p-4 rounded-2xl glass border border-white/[0.06] flex items-center justify-between gap-4 hover:border-indigo-500/20 transition">
+                    <div className="flex items-center gap-3.5">
+                      <img 
+                        src={st.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(st.name || 'Student')}&background=4f46e5&color=fff`} 
+                        alt={st.name} 
+                        className="w-10 h-10 rounded-xl object-cover border border-white/10" 
+                      />
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-200">{st.name}</h4>
+                        <p className="text-[11px] text-slate-400 font-medium">{st.email}</p>
+                        <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-500 font-bold uppercase">
+                          <span>{st.enrollment_no || 'No Reg No'}</span>
+                          {st.department && <span>• {st.department}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-widest badge-emerald">
+                        {st.status || 'ACTIVE'}
+                      </span>
+                      <p className="text-[9px] text-slate-500 font-medium mt-1">
+                        {st.semester_label || 'Current Semester'}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

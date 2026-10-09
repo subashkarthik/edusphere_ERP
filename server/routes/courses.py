@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional, List
@@ -63,16 +64,33 @@ def _get_video_courses() -> List[dict]:
 def list_courses(
     limit: int = Query(50, le=100),
     offset: int = Query(0),
+    all: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    List courses including video courses from storage/videos and SyncedSubject/SQLite tables.
+    List courses.
+    For students without `all=True`, returns their active enrolled courses.
+    For faculty/admins or when `all=True`, returns all active courses.
     """
+    if current_user.role == UserRole.STUDENT and not all:
+        sqlite_courses = _list_courses_sqlite(db, current_user, limit, offset)
+        return [
+            c.dict() if hasattr(c, 'dict') else {
+                "id": c.id, "code": c.code, "name": c.name, "credits": c.credits,
+                "department_id": c.department_id, "faculty_id": c.faculty_id,
+                "faculty_name": c.faculty_name, "semester": c.semester,
+                "description": c.description, "schedule": c.schedule,
+                "max_students": c.max_students, "enrolled_count": c.enrolled_count,
+                "progress": c.progress, "is_active": c.is_active,
+            }
+            for c in sqlite_courses
+        ]
+
     video_courses = _get_video_courses()
 
     try:
-        # Fetch from PostgreSQL table
+        # Fetch from PostgreSQL / Synced table
         synced_subjects = db.query(SyncedSubject).all()
         if not synced_subjects:
             raise RuntimeError("Synced subjects table is empty")
@@ -99,9 +117,8 @@ def list_courses(
         return result[offset:offset + limit]
 
     except Exception as e:
-        print(f"[PostgreSQL] Courses fallback to SQLite: {e}")
         # Fallback to SQLite
-        sqlite_courses = _list_courses_sqlite(db, current_user, limit, offset)
+        sqlite_courses = _list_courses_sqlite(db, current_user, limit, offset, force_all=all)
         sqlite_dicts = [
             c.dict() if hasattr(c, 'dict') else {
                 "id": c.id, "code": c.code, "name": c.name, "credits": c.credits,
@@ -117,17 +134,16 @@ def list_courses(
 
 
 
-def _list_courses_sqlite(db: Session, current_user: User, limit: int, offset: int):
-    """Original SQLite-based course listing as fallback."""
+def _list_courses_sqlite(db: Session, current_user: User, limit: int, offset: int, force_all: bool = False):
+    """SQLite-based course listing."""
     query = db.query(Course).filter(Course.is_active == True)
     
-    if current_user.role == UserRole.STUDENT:
-        # Join with enrollment to filter for student
+    if current_user.role == UserRole.STUDENT and not force_all:
         courses = query.join(Enrollment).filter(
             Enrollment.student_id == current_user.id,
             Enrollment.status == EnrollmentStatus.ACTIVE
         ).offset(offset).limit(limit).all()
-    elif current_user.role == UserRole.FACULTY:
+    elif current_user.role == UserRole.FACULTY and not force_all:
         courses = query.filter(Course.faculty_id == current_user.id).offset(offset).limit(limit).all()
     else:
         courses = query.offset(offset).limit(limit).all()
@@ -173,6 +189,53 @@ def create_course(
     )
 
 
+@router.get("/my-enrollments")
+def get_my_enrollments(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get all courses the currently authenticated user is enrolled in."""
+    enrollments = db.query(Enrollment).filter(
+        Enrollment.student_id == current_user.id,
+        Enrollment.status == EnrollmentStatus.ACTIVE
+    ).all()
+
+    result = []
+    for enr in enrollments:
+        c = enr.course
+        if not c:
+            continue
+        enrolled_count = db.query(Enrollment).filter(
+            Enrollment.course_id == c.id,
+            Enrollment.status == EnrollmentStatus.ACTIVE
+        ).count()
+        result.append({
+            "enrollment_id": enr.id,
+            "course_id": c.id,
+            "status": enr.status.value if hasattr(enr.status, "value") else str(enr.status),
+            "semester_label": enr.semester_label,
+            "grade": enr.grade,
+            "gpa_points": enr.gpa_points,
+            "enrolled_at": enr.enrolled_at.isoformat() if enr.enrolled_at else None,
+            "id": c.id,
+            "code": c.code,
+            "name": c.name,
+            "credits": c.credits,
+            "department_id": c.department_id,
+            "department_name": c.department.name if c.department else None,
+            "faculty_id": c.faculty_id,
+            "faculty_name": c.faculty.name if c.faculty else None,
+            "semester": c.semester,
+            "description": c.description,
+            "schedule": c.schedule,
+            "max_students": c.max_students,
+            "enrolled_count": enrolled_count,
+            "progress": _compute_progress(c, db),
+            "is_active": c.is_active,
+        })
+    return result
+
+
 @router.get("/{course_id}")
 def get_course(course_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Get course details by ID. Tries SyncedSubject first, then SQLite."""
@@ -216,6 +279,131 @@ def get_course(course_id: str, db: Session = Depends(get_db), current_user: User
     )
 
 
+@router.post("/{course_id}/self-enroll")
+def self_enroll(
+    course_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Self-enroll currently authenticated student in an active course.
+    Role: STUDENT only. Current user only.
+    Idempotent: if already enrolled, keeps ACTIVE status.
+    404 if course not found or inactive.
+    Uses EnrollmentStatus enum.
+    """
+    if current_user.role != UserRole.STUDENT:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Only students can self-enroll in courses."
+        )
+
+    # 404 if course does not exist or is inactive
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course or not course.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Course not found or is currently inactive."
+        )
+
+    # Check if already enrolled (idempotent)
+    existing = db.query(Enrollment).filter(
+        Enrollment.student_id == current_user.id,
+        Enrollment.course_id == course_id,
+    ).first()
+
+    if existing:
+        if existing.status != EnrollmentStatus.ACTIVE:
+            existing.status = EnrollmentStatus.ACTIVE
+            db.commit()
+            db.refresh(existing)
+        return {
+            "message": f"Already enrolled in {course.name}",
+            "enrollment_id": existing.id,
+            "course_id": course.id,
+            "status": existing.status.value if hasattr(existing.status, "value") else str(existing.status),
+        }
+
+    new_enrollment = Enrollment(
+        id=str(uuid.uuid4()),
+        org_id=current_user.org_id or course.org_id or "org-edusphere",
+        student_id=current_user.id,
+        course_id=course_id,
+        semester_label=f"Semester {course.semester or 7}",
+        status=EnrollmentStatus.ACTIVE,
+    )
+    db.add(new_enrollment)
+    db.commit()
+    db.refresh(new_enrollment)
+
+    return {
+        "message": f"Successfully enrolled in {course.name}",
+        "enrollment_id": new_enrollment.id,
+        "course_id": course.id,
+        "status": new_enrollment.status.value if hasattr(new_enrollment.status, "value") else str(new_enrollment.status),
+    }
+
+
+@router.get("/{course_id}/students")
+def get_course_enrolled_students(
+    course_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get the list of enrolled students for a course.
+    Faculty teaching this course or Admins only.
+    """
+    if current_user.role not in [UserRole.FACULTY, UserRole.ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Only faculty and admins can view enrolled students."
+        )
+
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+
+    if current_user.role == UserRole.FACULTY and course.faculty_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: You can only view enrolled students for your own courses."
+        )
+
+    enrollments = db.query(Enrollment).filter(
+        Enrollment.course_id == course_id,
+        Enrollment.status == EnrollmentStatus.ACTIVE
+    ).all()
+
+    students = []
+    for enr in enrollments:
+        student = enr.student
+        if not student:
+            continue
+        students.append({
+            "enrollment_id": enr.id,
+            "student_id": student.id,
+            "name": student.name,
+            "email": student.email,
+            "enrollment_no": student.enrollment_no,
+            "phone": student.phone,
+            "avatar": student.avatar,
+            "department": student.department.name if student.department else None,
+            "semester_label": enr.semester_label,
+            "status": enr.status.value if hasattr(enr.status, "value") else str(enr.status),
+            "enrolled_at": enr.enrolled_at.isoformat() if enr.enrolled_at else None,
+            "grade": enr.grade,
+        })
+
+    return {
+        "course_id": course.id,
+        "course_name": course.name,
+        "course_code": course.code,
+        "total_enrolled": len(students),
+        "students": students,
+    }
+
+
 @router.post("/{course_id}/enroll")
 def enroll_students(
     course_id: str,
@@ -239,7 +427,7 @@ def enroll_students(
         ).first()
         if existing:
             continue
-        enrollment = Enrollment(student_id=student_id, course_id=course_id)
+        enrollment = Enrollment(student_id=student_id, course_id=course_id, status=EnrollmentStatus.ACTIVE)
         db.add(enrollment)
         enrolled_count += 1
 

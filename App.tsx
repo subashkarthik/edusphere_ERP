@@ -247,6 +247,8 @@ const App: React.FC = () => {
           return <UsersModule currentUserRole={currentRole} />;
         case 'system':
           return <SystemModule user={user} />;
+        case 'catalog':
+          return <PublicCatalog />;
         case 'workspace':
           return <LearningWorkspace courseData={selectedCourse} onBack={() => setActiveTab('journey')} />;
         case 'timetable':

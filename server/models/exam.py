@@ -75,6 +75,8 @@ class Quiz(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships
+    course = relationship("Course", foreign_keys=[course_id])
+    creator = relationship("User", foreign_keys=[created_by])
     questions = relationship("QuizQuestion", back_populates="quiz", cascade="all, delete-orphan")
     attempts = relationship("QuizAttempt", back_populates="quiz", cascade="all, delete-orphan")
 

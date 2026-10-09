@@ -6,3 +6,4 @@
 export { default as AttendanceModule } from './AttendanceModule';
 export { default as ExamsModule } from './ExamsModule';
 export { default as SubjectsModule } from './SubjectsModule';
+export { default as PublicCatalog } from './PublicCatalog';

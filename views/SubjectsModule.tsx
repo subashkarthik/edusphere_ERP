@@ -5,7 +5,8 @@ import {
   Filter, ArrowLeft, ArrowRight, Download, Info, 
   List, History, LayoutGrid, Search, BookOpen,
   CheckCircle2, Clock, BarChart2, ShieldCheck, MoreVertical,
-  Layers, ChevronRight, GraduationCap
+  Layers, ChevronRight, GraduationCap, CheckCircle, Loader2,
+  Users, Sparkles, AlertCircle
 } from 'lucide-react';
 import { useApi } from '../hooks';
 import { coursesApi } from '../services/api';
@@ -18,16 +19,41 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
   const [selectedCourse, setSelectedCourse] = useState<any | null>(null);
   const [viewType, setViewType] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<'my_courses' | 'catalog'>('my_courses');
+  const [enrollingId, setEnrollingId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   
+  // Faculty/Admin student roster state
+  const [enrolledStudents, setEnrolledStudents] = useState<any[]>([]);
+  const [loadingStudents, setLoadingStudents] = useState(false);
+
   const fallbackCourses = [
-    { id: '1', code: 'CYB101', name: 'Ethical Hacking & AI', credits: 4, enrolled_count: 87, progress: 94, faculty_name: 'Dr. Arun Kumar', schedule: 'Mon, Wed 09:00 AM', category: 'Cyber Security' },
-    { id: '2', code: 'PRG201', name: 'Python Programming', credits: 3, enrolled_count: 65, progress: 88, faculty_name: 'Prof. S. Devi', schedule: 'Tue, Thu 11:30 AM', category: 'Programming Languages' },
-    { id: '3', code: 'PRG205', name: 'SQL Database Engineering', credits: 4, enrolled_count: 54, progress: 92, faculty_name: 'Dr. P. Raj', schedule: 'Fri 02:00 PM', category: 'Programming Languages' },
+    { id: 'crs-cc', code: 'CYB101', name: 'Ethical Hacking & AI', credits: 4, enrolled_count: 87, progress: 94, faculty_name: 'Dr. Arun Kumar', schedule: 'Mon, Wed 09:00 AM', category: 'Cyber Security' },
+    { id: 'crs-mad', code: 'PRG201', name: 'Python Programming', credits: 3, enrolled_count: 65, progress: 88, faculty_name: 'Prof. S. Devi', schedule: 'Tue, Thu 11:30 AM', category: 'Programming Languages' },
+    { id: 'crs-ml', code: 'PRG205', name: 'SQL Database Engineering', credits: 4, enrolled_count: 54, progress: 92, faculty_name: 'Dr. P. Raj', schedule: 'Fri 02:00 PM', category: 'Programming Languages' },
   ];
 
+  // For students, fetch my-enrollments. For faculty/admins, fetch all courses.
+  const fetcher = role === UserRole.STUDENT 
+    ? (activeTab === 'catalog' ? () => coursesApi.list(true) : () => coursesApi.myEnrollments())
+    : () => coursesApi.list();
 
-  const { data: courses, loading, refetch } = useApi(() => coursesApi.list(), fallbackCourses, [role], 'subjects-list');
+  const { data: courses, loading, refetch } = useApi(fetcher, fallbackCourses, [role, activeTab], `subjects-${role}-${activeTab}`);
   const { data: materials } = useApi(() => selectedCourse ? coursesApi.materials(selectedCourse.id) : Promise.resolve([]), [], [selectedCourse?.id]);
+
+  // If faculty/admin selects a course, load enrolled students
+  useEffect(() => {
+    if (selectedCourse && (role === UserRole.FACULTY || role === UserRole.ADMIN)) {
+      setLoadingStudents(true);
+      coursesApi.getEnrolledStudents(selectedCourse.id)
+        .then(res => setEnrolledStudents(res.students || []))
+        .catch(err => {
+          console.warn('Failed to load course students:', err);
+          setEnrolledStudents([]);
+        })
+        .finally(() => setLoadingStudents(false));
+    }
+  }, [selectedCourse, role]);
 
   // Ensure data refreshes on institutional events
   useEffect(() => {
@@ -35,6 +61,36 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
     window.addEventListener('institution-data-sync', handleRefresh);
     return () => window.removeEventListener('institution-data-sync', handleRefresh);
   }, [refetch]);
+
+  const handleSelfEnroll = async (c: any) => {
+    setEnrollingId(c.id);
+    setFeedback(null);
+    try {
+      await coursesApi.selfEnroll(c.id);
+      setFeedback({ type: 'success', text: `Enrolled successfully in ${c.code}: ${c.name}!` });
+      window.dispatchEvent(new CustomEvent('institution-data-sync'));
+      refetch();
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: err.message || 'Failed to enroll in course' });
+    } finally {
+      setEnrollingId(null);
+    }
+  };
+
+  const handleEnterClassroom = (c: any) => {
+    window.dispatchEvent(new CustomEvent('universe-navigate', { 
+      detail: { 
+        tab: 'workspace', 
+        courseData: {
+          id: c.id,
+          title: c.name,
+          name: c.name,
+          code: c.code,
+          modules: [{ id: 'm1', title: 'Main Stream', lessons: materials || [] }]
+        }
+      } 
+    }));
+  };
 
   const filteredCourses = (courses || []).filter(c => 
     c.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -102,6 +158,52 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
               </div>
             </GlassCard>
 
+            {/* Enrolled Students Roster for Faculty / Admin */}
+            {(role === UserRole.FACULTY || role === UserRole.ADMIN) && (
+              <GlassCard className="p-8 rounded-[2.5rem]" hover={false}>
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="font-bold text-slate-100 flex items-center gap-3">
+                    <Users className="text-indigo-400" size={20}/> Enrolled Student Roster
+                  </h3>
+                  <span className="px-3 py-1 glass rounded-lg text-[10px] font-black text-indigo-400 uppercase tracking-widest">
+                    {enrolledStudents.length} Students
+                  </span>
+                </div>
+
+                {loadingStudents ? (
+                  <div className="py-12 flex items-center justify-center gap-3 text-slate-400 text-xs font-bold">
+                    <Loader2 size={20} className="animate-spin text-indigo-400" />
+                    <span>Loading student roster...</span>
+                  </div>
+                ) : enrolledStudents.length === 0 ? (
+                  <div className="py-8 text-center text-slate-500 text-xs font-medium border border-dashed border-white/10 rounded-2xl">
+                    No students currently enrolled in this course.
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-72 overflow-y-auto scrollbar-hide">
+                    {enrolledStudents.map((st, i) => (
+                      <div key={st.enrollment_id || i} className="p-3.5 rounded-xl glass border border-white/[0.06] flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <img 
+                            src={st.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(st.name)}&background=4f46e5&color=fff`} 
+                            alt={st.name} 
+                            className="w-8 h-8 rounded-lg object-cover" 
+                          />
+                          <div>
+                            <p className="text-xs font-bold text-slate-200">{st.name}</p>
+                            <p className="text-[10px] text-slate-400">{st.email} • {st.enrollment_no || 'N/A'}</p>
+                          </div>
+                        </div>
+                        <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider badge-emerald">
+                          {st.status || 'ACTIVE'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </GlassCard>
+            )}
+
             <GlassCard className="p-8 rounded-[2.5rem]" hover={false}>
               <h3 className="font-bold text-slate-100 mb-8 flex items-center gap-3"><History className="text-indigo-400" size={20}/> Session Intelligence</h3>
               <div className="overflow-hidden glass rounded-2xl">
@@ -168,14 +270,41 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
             <BookOpen size={12} className="text-indigo-400" />
             Curriculum Architecture
           </div>
-          <h1 className="text-2xl font-black text-slate-100 tracking-tight">Active Courses</h1>
+          <h1 className="text-2xl font-black text-slate-100 tracking-tight">
+            {role === UserRole.STUDENT 
+              ? (activeTab === 'catalog' ? 'Course Catalog & Self-Enrollment' : 'My Enrolled Courses')
+              : 'Active Courses'}
+          </h1>
         </div>
+
+        {/* Student View Switcher */}
+        {role === UserRole.STUDENT && (
+          <div className="flex bg-white/5 p-1 rounded-2xl border border-white/5">
+            <button
+              onClick={() => { setActiveTab('my_courses'); setFeedback(null); }}
+              className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition ${
+                activeTab === 'my_courses' ? 'glass-btn-primary text-white shadow-md' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              My Courses
+            </button>
+            <button
+              onClick={() => { setActiveTab('catalog'); setFeedback(null); }}
+              className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition ${
+                activeTab === 'catalog' ? 'glass-btn-primary text-white shadow-md' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Explore Catalog
+            </button>
+          </div>
+        )}
+
         <div className="flex items-center gap-2 p-1.5 glass rounded-2xl w-full md:w-auto">
           <div className="relative flex-1 md:w-64">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
             <input 
               type="text" 
-              placeholder="Search..." 
+              placeholder="Search courses..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder:text-slate-600 outline-none focus:border-indigo-500/50 transition-all"
@@ -189,68 +318,131 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
         </div>
       </div>
 
-      <div className={viewType === 'grid' ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" : "space-y-4"}>
-        {filteredCourses.map((c: any) => (
-          <GlassCard key={c.id || c.code} onClick={() => setSelectedCourse(c)} className={viewType === 'grid' ? 'p-8 rounded-[2.5rem]' : 'p-5 rounded-2xl'}>
-            <div className={viewType === 'list' ? 'flex items-center gap-8' : ''}>
-              <div className={`shrink-0 flex items-center justify-center font-black text-[11px] ${viewType === 'grid' ? 'w-12 h-12 rounded-xl bg-indigo-500/15 text-indigo-400 mb-8' : 'w-10 h-10 rounded-lg bg-indigo-500/15 text-indigo-400'}`}>
-                {c.code?.slice(-2) || 'XX'}
-              </div>
-              
-              <div className="flex-1 overflow-hidden">
-                <div className="flex justify-between items-start mb-2">
-                  <div className="flex-1 overflow-hidden">
-                    <h3 className="text-sm font-bold text-slate-200 group-hover:text-indigo-400 transition-colors truncate">{c.name || 'Untitled Course'}</h3>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5 truncate">{c.code} • {c.category || 'Academic'}</p>
+      {feedback && (
+        <div className={`p-4 rounded-2xl flex items-center gap-3 border text-xs font-bold animate-in fade-in duration-300 ${
+          feedback.type === 'success' 
+            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
+            : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+        }`}>
+          {feedback.type === 'success' ? <CheckCircle size={16} className="text-emerald-400 shrink-0" /> : <AlertCircle size={16} className="text-rose-400 shrink-0" />}
+          <span>{feedback.text}</span>
+        </div>
+      )}
+
+      {/* Empty state for students with no enrollments */}
+      {role === UserRole.STUDENT && activeTab === 'my_courses' && filteredCourses.length === 0 ? (
+        <GlassCard className="p-12 rounded-[2.5rem] text-center space-y-4 max-w-lg mx-auto" hover={false}>
+          <div className="w-16 h-16 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-400 mx-auto">
+            <GraduationCap size={32} />
+          </div>
+          <h3 className="text-lg font-black text-white">No Enrolled Courses Found</h3>
+          <p className="text-xs text-slate-400 font-medium leading-relaxed">
+            You are not currently enrolled in any institutional modules. Explore the course catalog to self-enroll in your semester subjects.
+          </p>
+          <button
+            onClick={() => setActiveTab('catalog')}
+            className="glass-btn-primary px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-wider text-white inline-flex items-center gap-2"
+          >
+            <Sparkles size={14} /> Browse Course Catalog
+          </button>
+        </GlassCard>
+      ) : (
+        <div className={viewType === 'grid' ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" : "space-y-4"}>
+          {filteredCourses.map((c: any) => {
+            const isEnrolling = enrollingId === c.id;
+
+            return (
+              <GlassCard key={c.id || c.code} onClick={() => setSelectedCourse(c)} className={viewType === 'grid' ? 'p-8 rounded-[2.5rem] flex flex-col justify-between' : 'p-5 rounded-2xl'}>
+                <div className={viewType === 'list' ? 'flex items-center gap-8' : ''}>
+                  <div className={`shrink-0 flex items-center justify-center font-black text-[11px] ${viewType === 'grid' ? 'w-12 h-12 rounded-xl bg-indigo-500/15 text-indigo-400 mb-8' : 'w-10 h-10 rounded-lg bg-indigo-500/15 text-indigo-400'}`}>
+                    {c.code?.slice(-2) || 'XX'}
                   </div>
+                  
+                  <div className="flex-1 overflow-hidden">
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex-1 overflow-hidden">
+                        <h3 className="text-sm font-bold text-slate-200 group-hover:text-indigo-400 transition-colors truncate">{c.name || 'Untitled Course'}</h3>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5 truncate">{c.code} • {c.category || 'Academic'}</p>
+                      </div>
+                      {viewType === 'grid' && (
+                         <div className="text-right shrink-0">
+                           <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Credits</p>
+                           <p className="text-xs font-black text-slate-200">{c.credits || 0}</p>
+                         </div>
+                      )}
+                    </div>
+
+                    {viewType === 'grid' && (
+                      <div className="flex flex-wrap gap-1.5 my-6 h-[40px] overflow-hidden">
+                        {(c.code === 'CS8701' ? ['AWS', 'Docker', 'Kubernetes'] : c.code === 'CS8702' ? ['Network Security', 'Cryptography'] : ['Core Engineering', 'System Design']).map((skill: string) => (
+                          <span key={skill} className="px-2 py-0.5 glass text-slate-400 text-[8px] font-black uppercase rounded">{skill}</span>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center text-[10px] font-bold uppercase text-slate-400">
+                        <span>Course Velocity</span>
+                        <span className="text-indigo-400">{c.progress || 0}%</span>
+                      </div>
+                      <div className="h-1 bg-white/[0.06] rounded-full overflow-hidden"><div className="h-full bg-indigo-500 transition-all duration-1000 progress-glow" style={{width: `${c.progress || 0}%`, color: '#818cf8'}}></div></div>
+                    </div>
+                  </div>
+
+                  {viewType === 'list' && (
+                     <div className="flex items-center gap-10 shrink-0">
+                       <div className="text-center min-w-[60px]">
+                         <p className="text-[9px] font-black text-slate-500 uppercase">Credits</p>
+                         <p className="text-xs font-black text-slate-200">{c.credits || 0}</p>
+                       </div>
+                       <div className="p-3 rounded-xl glass text-slate-400"><ArrowRight size={16}/></div>
+                     </div>
+                  )}
+
                   {viewType === 'grid' && (
-                     <div className="text-right shrink-0">
-                       <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Credits</p>
-                       <p className="text-xs font-black text-slate-200">{c.credits || 0}</p>
+                     <div className="mt-8 pt-5 border-t border-white/[0.06] space-y-3">
+                       <div className="flex justify-between items-center">
+                         <div className="flex items-center gap-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                           <Clock size={12} className="text-indigo-400" />
+                           {c.schedule || 'Institutional Stream'}
+                         </div>
+                         <div className="w-8 h-8 rounded-full glass flex items-center justify-center text-slate-400 group-hover:text-indigo-400 transition-colors"><ArrowRight size={14}/></div>
+                       </div>
+
+                       {/* Action Buttons inside Course Card */}
+                       {role === UserRole.STUDENT && activeTab === 'catalog' && (
+                         <div className="pt-2" onClick={e => e.stopPropagation()}>
+                           <button
+                             type="button"
+                             onClick={() => handleSelfEnroll(c)}
+                             disabled={isEnrolling}
+                             className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-2"
+                           >
+                             {isEnrolling ? <Loader2 size={14} className="animate-spin" /> : <GraduationCap size={14} />}
+                             {isEnrolling ? 'Enrolling...' : 'Enroll In Course'}
+                           </button>
+                         </div>
+                       )}
+
+                       {role === UserRole.STUDENT && activeTab === 'my_courses' && (
+                         <div className="pt-2" onClick={e => e.stopPropagation()}>
+                           <button
+                             type="button"
+                             onClick={() => handleEnterClassroom(c)}
+                             className="w-full py-2 bg-emerald-600/80 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-2"
+                           >
+                             <GraduationCap size={14} /> Continue Learning
+                           </button>
+                         </div>
+                       )}
                      </div>
                   )}
                 </div>
-
-                {viewType === 'grid' && (
-                  <div className="flex flex-wrap gap-1.5 my-6 h-[40px] overflow-hidden">
-                    {(c.code === 'CS8701' ? ['AWS', 'Docker', 'Kubernetes'] : c.code === 'CS8702' ? ['Network Security', 'Cryptography'] : ['Core Engineering', 'System Design']).map((skill: string) => (
-                      <span key={skill} className="px-2 py-0.5 glass text-slate-400 text-[8px] font-black uppercase rounded">{skill}</span>
-                    ))}
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center text-[10px] font-bold uppercase text-slate-400">
-                    <span>Course Velocity</span>
-                    <span className="text-indigo-400">{c.progress || 0}%</span>
-                  </div>
-                  <div className="h-1 bg-white/[0.06] rounded-full overflow-hidden"><div className="h-full bg-indigo-500 transition-all duration-1000 progress-glow" style={{width: `${c.progress || 0}%`, color: '#818cf8'}}></div></div>
-                </div>
-              </div>
-
-              {viewType === 'list' && (
-                 <div className="flex items-center gap-10 shrink-0">
-                   <div className="text-center min-w-[60px]">
-                     <p className="text-[9px] font-black text-slate-500 uppercase">Credits</p>
-                     <p className="text-xs font-black text-slate-200">{c.credits || 0}</p>
-                   </div>
-                   <div className="p-3 rounded-xl glass text-slate-400"><ArrowRight size={16}/></div>
-                 </div>
-              )}
-
-              {viewType === 'grid' && (
-                 <div className="mt-8 pt-5 border-t border-white/[0.06] flex justify-between items-center">
-                   <div className="flex items-center gap-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                     <Clock size={12} className="text-indigo-400" />
-                     {c.schedule || 'Institutional Stream'}
-                   </div>
-                   <div className="w-8 h-8 rounded-full glass flex items-center justify-center text-slate-400 group-hover:text-indigo-400 transition-colors"><ArrowRight size={14}/></div>
-                 </div>
-              )}
-            </div>
-          </GlassCard>
-        ))}
-      </div>
+              </GlassCard>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

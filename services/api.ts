@@ -171,8 +171,16 @@ export const intelligenceApi = {
 // ---------- Attendance API ----------
 export const attendanceApi = {
   summary: () => apiFetch<any[]>('/attendance/summary'),
-  getHistory: () => apiFetch<any[]>('/attendance/history'),
-  markAttendance: (data: any) => apiFetch<any>('/attendance/mark', { method: 'POST', body: JSON.stringify(data) }),
+  getMe: () => apiFetch<{ summary: any[]; history: any[]; overall_percentage: number; total_courses: number; has_warning: boolean }>('/attendance/me'),
+  getCourseAttendance: (courseId: string, date?: string) =>
+    apiFetch<any>(date ? `/attendance/course/${courseId}?date=${date}` : `/attendance/course/${courseId}`),
+  getCourseSummary: (courseId: string) => apiFetch<any>(`/attendance/summary/${courseId}`),
+  mark: (data: { course_id: string; date: string; marks: { student_id: string; status: string }[] }) =>
+    apiFetch<any>('/attendance/mark', { method: 'POST', body: JSON.stringify(data) }),
+  markAttendance: (data: any) =>
+    apiFetch<any>('/attendance/mark', { method: 'POST', body: JSON.stringify(data) }),
+  getHistory: (courseId?: string) =>
+    apiFetch<any[]>(courseId ? `/attendance/history/${courseId}` : '/attendance/me'),
 };
 
 // ---------- Subjects & Curriculum API ----------
@@ -182,7 +190,10 @@ export const subjectApi = {
 };
 
 export const coursesApi = {
-  list: () => apiFetch<any[]>('/courses/'),
+  list: (all: boolean = false) => apiFetch<any[]>(all ? '/courses/?all=true' : '/courses/'),
+  myEnrollments: () => apiFetch<any[]>('/courses/my-enrollments'),
+  selfEnroll: (courseId: string) => apiFetch<any>(`/courses/${courseId}/self-enroll`, { method: 'POST' }),
+  getEnrolledStudents: (courseId: string) => apiFetch<any>(`/courses/${courseId}/students`),
   materials: (id: string) => apiFetch<any[]>(`/courses/${id}/materials`),
 };
 
@@ -192,6 +203,7 @@ export const examApi = {
   getResults: () => apiFetch<any[]>('/exams/results'),
   getQuizzes: () => apiFetch<any[]>('/exams/quizzes'),
   getQuizDetails: (id: string) => apiFetch<any>(`/exams/quizzes/${id}`),
+  getQuizAttempts: (id: string) => apiFetch<any>(`/exams/quizzes/${id}/attempts`),
   submitQuiz: (id: string, answers: Record<string, string>, tab_switch_violations: number = 0) =>
     apiFetch<any>(`/exams/quizzes/${id}/submit`, {
       method: 'POST',
@@ -304,7 +316,9 @@ export const cmsApi = {
     apiFetch<any>(`/cms/courses/${id}/reject`, {
       method: 'POST',
       body: JSON.stringify({ remarks }),
-    })
+    }),
+  getEnrolledStudents: (courseId: string) =>
+    apiFetch<any>(`/cms/courses/${courseId}/students`),
 };
 
 

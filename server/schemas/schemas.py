@@ -90,6 +90,18 @@ class AttendanceSessionCreate(BaseModel):
     end_time: Optional[str] = None
 
 
+class AttendanceMarkItem(BaseModel):
+    student_id: str
+    status: str = "PRESENT"  # PRESENT | ABSENT | LATE
+
+
+class AttendanceMarkPayload(BaseModel):
+    course_id: str
+    date: str  # YYYY-MM-DD
+    marks: Optional[List[AttendanceMarkItem]] = None
+    students: Optional[List[AttendanceMarkItem]] = None
+
+
 class AttendanceMarkRequest(BaseModel):
     marks: List[dict]  # [{"student_id": "...", "status": "PRESENT|ABSENT|LATE"}]
 

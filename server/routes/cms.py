@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from database import get_db
 from models.user import User, UserRole
-from models.academic import Course, CourseMaterial, Enrollment
+from models.academic import Course, CourseMaterial, Enrollment, EnrollmentStatus
 from models.content import Module, Lesson, ContentType
 from middleware.auth import get_current_user
 import uuid
@@ -72,7 +72,7 @@ async def bulk_enroll_students(
                     student_id=student.id,
                     course_id=course_id,
                     semester_label=row.get("semester", "Semester 7"),
-                    status="ACTIVE"
+                    status=EnrollmentStatus.ACTIVE
                 )
                 db.add(new_enrollment)
                 processed_count += 1
@@ -85,12 +85,86 @@ async def get_faculty_inventory(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Retrieve all courses and materials managed by the current faculty member in their org."""
-    courses = db.query(Course).filter(
-        Course.org_id == current_user.org_id,
-        Course.faculty_id == current_user.id
+    """Retrieve all courses and materials managed by the current faculty member or all courses for admin."""
+    if current_user.role == UserRole.ADMIN:
+        courses = db.query(Course).filter(Course.org_id == current_user.org_id).all()
+    else:
+        courses = db.query(Course).filter(
+            Course.org_id == current_user.org_id,
+            Course.faculty_id == current_user.id
+        ).all()
+
+    result = []
+    for c in courses:
+        enrolled_count = db.query(Enrollment).filter(
+            Enrollment.course_id == c.id,
+            Enrollment.status == EnrollmentStatus.ACTIVE
+        ).count()
+        result.append({
+            "id": c.id,
+            "org_id": c.org_id,
+            "code": c.code,
+            "name": c.name,
+            "credits": c.credits,
+            "department_id": c.department_id,
+            "faculty_id": c.faculty_id,
+            "semester": c.semester,
+            "description": c.description,
+            "schedule": c.schedule,
+            "max_students": c.max_students,
+            "is_active": c.is_active,
+            "approval_status": c.approval_status,
+            "enrolled_count": enrolled_count,
+        })
+    return result
+
+@router.get("/courses/{course_id}/students")
+async def get_cms_course_students(
+    course_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Retrieve enrolled students for a course managed by faculty or admin."""
+    if current_user.role not in [UserRole.FACULTY, UserRole.ADMIN]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    course = db.query(Course).filter(Course.id == course_id, Course.org_id == current_user.org_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found in your institution")
+
+    if current_user.role == UserRole.FACULTY and course.faculty_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden: You can only view students for your own courses")
+
+    enrollments = db.query(Enrollment).filter(
+        Enrollment.course_id == course_id,
+        Enrollment.status == EnrollmentStatus.ACTIVE
     ).all()
-    return courses
+
+    students = []
+    for enr in enrollments:
+        student = enr.student
+        if not student:
+            continue
+        students.append({
+            "enrollment_id": enr.id,
+            "student_id": student.id,
+            "name": student.name,
+            "email": student.email,
+            "enrollment_no": student.enrollment_no,
+            "phone": student.phone,
+            "avatar": student.avatar,
+            "department": student.department.name if student.department else None,
+            "semester_label": enr.semester_label,
+            "status": enr.status.value if hasattr(enr.status, "value") else str(enr.status),
+            "enrolled_at": enr.enrolled_at.isoformat() if enr.enrolled_at else None,
+        })
+    return {
+        "course_id": course.id,
+        "course_name": course.name,
+        "course_code": course.code,
+        "total_enrolled": len(students),
+        "students": students,
+    }
 
 from pydantic import BaseModel, Field
 from typing import Optional
