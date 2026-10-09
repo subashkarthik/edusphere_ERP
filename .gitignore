@@ -18,8 +18,9 @@ server/.env
 *.accdb
 *.ldb
 
-# Heavy Video Assets
-server/storage/videos/
+# Storage & Assets
+storage/
+server/storage/
 *.mp4
 *.mkv
 *.webm

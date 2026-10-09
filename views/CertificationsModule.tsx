@@ -5,6 +5,7 @@ import {
   Sliders, User, Check, XCircle
 } from 'lucide-react';
 import { UserRole, UserProfile, CertificateRecord, CertificateSettings } from '../types';
+import { certificatesApi } from '../services/api';
 
 interface CertificationsModuleProps {
   user: UserProfile;
@@ -109,24 +110,17 @@ const CertificationsModule: React.FC<CertificationsModuleProps> = ({ user }) => 
   const fetchCertificatesData = async () => {
     setLoading(true);
     try {
-      // Fetch Threshold Settings
-      const settingsRes = await fetch('/api/certificates/settings');
-      if (settingsRes.ok) {
-        const sData = await settingsRes.json();
+      // Fetch Threshold Settings via centralized API client
+      const sData = await certificatesApi.getSettings();
+      if (sData) {
         setSettings(sData);
         setEditAttendanceThreshold(sData.min_attendance_pct);
         setEditAssessmentThreshold(sData.min_assessment_pct);
       }
 
-      // Fetch Certificates according to role
-      const endpoint = isAdmin ? '/api/certificates/all' : '/api/certificates/my-certificates';
-      const certsRes = await fetch(endpoint);
-      if (certsRes.ok) {
-        const cData = await certsRes.json();
-        setCertificates(cData.length > 0 ? cData : defaultStudentCerts);
-      } else {
-        setCertificates(defaultStudentCerts);
-      }
+      // Fetch Certificates according to role via centralized API client
+      const cData = await certificatesApi.getCertificates(isAdmin);
+      setCertificates(cData && cData.length > 0 ? cData : defaultStudentCerts);
     } catch (e) {
       console.warn('API unavailable, falling back to local state:', e);
       setCertificates(defaultStudentCerts);
@@ -141,26 +135,19 @@ const CertificationsModule: React.FC<CertificationsModuleProps> = ({ user }) => 
 
   const handleUpdateThresholds = async () => {
     try {
-      const res = await fetch('/api/certificates/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          min_attendance_pct: editAttendanceThreshold,
-          min_assessment_pct: editAssessmentThreshold
-        })
+      await certificatesApi.updateSettings({
+        min_attendance_pct: editAttendanceThreshold,
+        min_assessment_pct: editAssessmentThreshold
       });
-
-      if (res.ok) {
-        setSettings({
-          org_id: settings.org_id,
-          min_attendance_pct: editAttendanceThreshold,
-          min_assessment_pct: editAssessmentThreshold
-        });
-        setActionSuccess('Certificate eligibility thresholds updated & re-evaluated!');
-        setShowSettingsModal(false);
-        fetchCertificatesData();
-        setTimeout(() => setActionSuccess(null), 4000);
-      }
+      setSettings({
+        org_id: settings.org_id,
+        min_attendance_pct: editAttendanceThreshold,
+        min_assessment_pct: editAssessmentThreshold
+      });
+      setActionSuccess('Certificate eligibility thresholds updated & re-evaluated!');
+      setShowSettingsModal(false);
+      fetchCertificatesData();
+      setTimeout(() => setActionSuccess(null), 4000);
     } catch (e) {
       // Fallback update
       setSettings({
@@ -174,12 +161,10 @@ const CertificationsModule: React.FC<CertificationsModuleProps> = ({ user }) => 
 
   const handleRevokeCertificate = async (certId: string) => {
     try {
-      const res = await fetch(`/api/certificates/revoke/${certId}`, { method: 'POST' });
-      if (res.ok) {
-        setActionSuccess('Certificate revoked successfully.');
-        fetchCertificatesData();
-        setTimeout(() => setActionSuccess(null), 4000);
-      }
+      await certificatesApi.revokeCertificate(certId);
+      setActionSuccess('Certificate revoked successfully.');
+      fetchCertificatesData();
+      setTimeout(() => setActionSuccess(null), 4000);
     } catch (e) {
       setCertificates(prev => prev.map(c => c.id === certId ? { ...c, eligibility_status: 'REVOKED' } : c));
     }

@@ -4,9 +4,12 @@ from typing import List
 
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "postgresql://postgres:1407@localhost:5432/edusphere"
-    REDIS_URL: str = "redis://localhost:6379/0"
-    JWT_SECRET_KEY: str = "edusphere-lms-jwt-secret-change-in-production-2026"
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./edusphere.db")
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "")
+    FACULTY_INVITE_KEY: str = os.getenv("FACULTY_INVITE_KEY", "")
+    ENABLE_SECURITY_ALERTS: bool = os.getenv("ENABLE_SECURITY_ALERTS", "false").lower() == "true"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -28,5 +31,13 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Startup security validation for production mode
+if settings.ENVIRONMENT.lower() == "production":
+    if not settings.JWT_SECRET_KEY or settings.JWT_SECRET_KEY == "change_me_secret_key":
+        raise RuntimeError("CRITICAL SECURITY ERROR: JWT_SECRET_KEY environment variable is missing or insecure in production mode.")
+elif not settings.JWT_SECRET_KEY:
+    settings.JWT_SECRET_KEY = "dev-insecure-secret-key-edusphere-2026"
+
 
 

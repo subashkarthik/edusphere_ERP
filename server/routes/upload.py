@@ -43,10 +43,14 @@ async def upload_file(
 
 
 from fastapi.responses import FileResponse
+from middleware.auth import get_current_user_from_token
 
 @router.get("/files/{filename}")
-async def get_uploaded_file(filename: str):
-    """Serve uploaded file."""
+async def get_uploaded_file(
+    filename: str,
+    current_user: User = Depends(get_current_user_from_token)
+):
+    """Serve uploaded file (Protected)."""
     file_path = os.path.join(UPLOAD_DIR, filename)
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="File not found")

@@ -9,24 +9,49 @@ import { LearningMetric, Recommendation, UserNotification, StudyTask } from '../
 
 const API_BASE = '/api';
 
-// ---------- Token Storage (in-memory for security) ----------
-let accessToken: string | null = null;
-let refreshToken: string | null = null;
+// ---------- Persistent Token Storage ----------
+const ACCESS_TOKEN_KEY = 'token';
+const REFRESH_TOKEN_KEY = 'refresh_token';
+
+let accessToken: string | null = typeof window !== 'undefined' ? localStorage.getItem(ACCESS_TOKEN_KEY) : null;
+let refreshToken: string | null = typeof window !== 'undefined' ? localStorage.getItem(REFRESH_TOKEN_KEY) : null;
 
 export const setTokens = (access: string, refresh: string) => {
   accessToken = access;
   refreshToken = refresh;
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(ACCESS_TOKEN_KEY, access);
+    localStorage.setItem(REFRESH_TOKEN_KEY, refresh);
+  }
 };
 
 export const clearTokens = () => {
   accessToken = null;
   refreshToken = null;
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+  }
 };
 
-export const getAccessToken = () => accessToken;
+export const getAccessToken = () => {
+  if (!accessToken && typeof window !== 'undefined') {
+    accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
+  }
+  return accessToken;
+};
+
+export const getRefreshToken = () => {
+  if (!refreshToken && typeof window !== 'undefined') {
+    refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+  }
+  return refreshToken;
+};
+
+export const getToken = () => getAccessToken();
 
 // ---------- Core Fetch Wrapper ----------
-async function apiFetch<T>(
+export async function apiFetch<T>(
   endpoint: string,
   options: RequestInit = {},
   retry = true
@@ -36,8 +61,9 @@ async function apiFetch<T>(
     ...(options.headers as Record<string, string>),
   };
 
-  if (accessToken) {
-    headers['Authorization'] = `Bearer ${accessToken}`;
+  const token = getAccessToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
   }
 
   const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -45,12 +71,21 @@ async function apiFetch<T>(
     headers,
   });
 
-  // Handle 401 - attempt token refresh
-  if (response.status === 401 && retry && refreshToken) {
-    const refreshed = await attemptRefresh();
-    if (refreshed) {
-      return apiFetch<T>(endpoint, options, false);
+  // Handle 401 - attempt token refresh or redirect to login
+  if (response.status === 401) {
+    const rToken = getRefreshToken();
+    if (retry && rToken) {
+      const refreshed = await attemptRefresh();
+      if (refreshed) {
+        return apiFetch<T>(endpoint, options, false);
+      }
     }
+    clearTokens();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+    }
+    const error = await response.json().catch(() => ({ detail: 'Unauthorized' }));
+    throw new Error(error.detail || 'HTTP 401');
   }
 
   if (!response.ok) {
@@ -62,13 +97,14 @@ async function apiFetch<T>(
 }
 
 async function attemptRefresh(): Promise<boolean> {
-  if (!refreshToken) return false;
+  const currentRefreshToken = getRefreshToken();
+  if (!currentRefreshToken) return false;
 
   try {
     const res = await fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refreshToken }),
+      body: JSON.stringify({ refresh_token: currentRefreshToken }),
     });
 
     if (!res.ok) return false;
@@ -335,4 +371,22 @@ export const workspaceApi = {
 export const videosApi = {
   journey: () => apiFetch<any[]>('/videos/journey'),
   cloudStatus: () => apiFetch<any>('/videos/cloud-status'),
+  recordProgress: (lesson_id: string, completed: boolean) =>
+    apiFetch<any>('/videos/progress', {
+      method: 'POST',
+      body: JSON.stringify({ lesson_id, completed }),
+    }),
+};
+
+export const certificatesApi = {
+  getSettings: () => apiFetch<any>('/certificates/settings'),
+  getCertificates: (isAdmin: boolean) =>
+    apiFetch<any[]>(isAdmin ? '/certificates/all' : '/certificates/my-certificates'),
+  updateSettings: (data: { min_attendance_pct: number; min_assessment_pct: number }) =>
+    apiFetch<any>('/certificates/settings', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  revokeCertificate: (certId: string) =>
+    apiFetch<any>(`/certificates/revoke/${certId}`, { method: 'POST' }),
 };

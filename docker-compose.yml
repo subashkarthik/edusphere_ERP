@@ -6,15 +6,15 @@ services:
     container_name: edusphere-postgres
     restart: always
     environment:
-      POSTGRES_DB: edusphere
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: edusphere_prod_password_2026
+      POSTGRES_DB: ${POSTGRES_DB:-edusphere}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d edusphere"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-edusphere}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,9 +28,10 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://postgres:edusphere_prod_password_2026@edusphere-db:5432/edusphere
-      - JWT_SECRET_KEY=edusphere_super_secret_jwt_key_2026_prod
-      - ENVIRONMENT=production
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - FACULTY_INVITE_KEY=${FACULTY_INVITE_KEY}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
     depends_on:
       edusphere-db:
         condition: service_healthy

@@ -219,7 +219,7 @@ export const ExamsModule: React.FC<ModuleProps> = ({ role }) => {
   );
 
   const { data: schedules } = useApi(() => examsApi.schedules(), [], [role], 'exam-schedules');
-  const { data: quizzes, reload: reloadQuizzes } = useApi(() => examApi.getQuizzes(), [], [role], 'exam-quizzes');
+  const { data: quizzes, refetch: reloadQuizzes } = useApi(() => examApi.getQuizzes(), [], [role], 'exam-quizzes');
 
   const quizzesList = (quizzes && (quizzes as any[]).length > 0) ? (quizzes as any[]) : DEFAULT_QUIZZES;
 
@@ -310,7 +310,7 @@ export const ExamsModule: React.FC<ModuleProps> = ({ role }) => {
       let correct = 0;
       const review = qns.map((q: any) => {
         const userChoice = answers[q.id] || '';
-        const isCorrect = userChoice.upper?.() === q.correct_option?.upper?.() || userChoice === q.correct_option;
+        const isCorrect = String(userChoice).toUpperCase() === String(q.correct_option || '').toUpperCase();
         if (isCorrect) { score += (q.marks || 10); correct++; }
         return {
           question_id: q.id,

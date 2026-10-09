@@ -92,14 +92,27 @@ async def get_faculty_inventory(
     ).all()
     return courses
 
+from pydantic import BaseModel, Field
+from typing import Optional
+
+class CourseUpdateSchema(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    credits: Optional[int] = None
+    department_id: Optional[str] = None
+    is_active: Optional[bool] = None
+
 @router.put("/courses/{course_id}")
 async def update_course(
     course_id: str,
-    course_data: dict,
+    course_data: CourseUpdateSchema,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Update course details. Only owner/admin from the same org."""
+    if current_user.role not in [UserRole.FACULTY, UserRole.ADMIN]:
+        raise HTTPException(status_code=403, detail="Forbidden: Student role cannot update courses")
+
     course = db.query(Course).filter(
         Course.id == course_id, 
         Course.org_id == current_user.org_id
@@ -108,10 +121,20 @@ async def update_course(
     if not course:
         raise HTTPException(status_code=404, detail="Course not found in your institution")
         
-    for key, value in course_data.items():
-        if hasattr(course, key):
-            setattr(course, key, value)
-            
+    if current_user.role == UserRole.FACULTY and course.faculty_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden: You can only update your own courses")
+
+    if course_data.name is not None:
+        course.name = course_data.name
+    if course_data.description is not None:
+        course.description = course_data.description
+    if course_data.credits is not None:
+        course.credits = course_data.credits
+    if course_data.department_id is not None:
+        course.department_id = course_data.department_id
+    if course_data.is_active is not None:
+        course.is_active = course_data.is_active
+
     db.commit()
     db.refresh(course)
     return course
@@ -123,6 +146,9 @@ async def delete_course(
     db: Session = Depends(get_db)
 ):
     """Permanently delete a course and its contents from the institution."""
+    if current_user.role not in [UserRole.FACULTY, UserRole.ADMIN]:
+        raise HTTPException(status_code=403, detail="Forbidden: Student role cannot delete courses")
+
     course = db.query(Course).filter(
         Course.id == course_id, 
         Course.org_id == current_user.org_id
@@ -131,9 +157,13 @@ async def delete_course(
     if not course:
         raise HTTPException(status_code=404, detail="Course not found in your institution")
         
+    if current_user.role == UserRole.FACULTY and course.faculty_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden: You can only delete your own courses")
+
     db.delete(course)
     db.commit()
     return {"status": "deleted", "id": course_id}
+
 @router.get("/courses/{course_id}/curriculum")
 async def get_course_curriculum(
     course_id: str,
@@ -156,6 +186,16 @@ async def add_module(
     db: Session = Depends(get_db)
 ):
     """Add a new learning module to a course."""
+    if current_user.role not in [UserRole.FACULTY, UserRole.ADMIN]:
+        raise HTTPException(status_code=403, detail="Forbidden: Student role cannot add modules")
+
+    course = db.query(Course).filter(Course.id == course_id, Course.org_id == current_user.org_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    if current_user.role == UserRole.FACULTY and course.faculty_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden: You can only add modules to your own course")
+
     new_module = Module(
         id=str(uuid.uuid4()),
         org_id=current_user.org_id,
@@ -177,6 +217,17 @@ async def add_lesson(
     db: Session = Depends(get_db)
 ):
     """Add a lesson to a module."""
+    if current_user.role not in [UserRole.FACULTY, UserRole.ADMIN]:
+        raise HTTPException(status_code=403, detail="Forbidden: Student role cannot add lessons")
+
+    module = db.query(Module).filter(Module.id == module_id, Module.org_id == current_user.org_id).first()
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+
+    course = db.query(Course).filter(Course.id == module.course_id).first()
+    if current_user.role == UserRole.FACULTY and course and course.faculty_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden: You can only add lessons to your own course")
+
     new_lesson = Lesson(
         id=str(uuid.uuid4()),
         org_id=current_user.org_id,

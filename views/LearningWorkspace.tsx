@@ -9,6 +9,7 @@ import {
 import GlassCard from '../components/GlassCard';
 import VideoPlayer from '../components/VideoPlayer';
 import { useSocket } from '../hooks/useSocket';
+import { videosApi } from '../services/api';
 
 interface Lesson {
   id: string;
@@ -72,15 +73,7 @@ const LearningWorkspace: React.FC<LearningWorkspaceProps> = ({ courseData, onBac
   const handleVideoProgress = async (percentage: number) => {
     if (percentage > 80 && currentLesson?.id) {
       try {
-        const token = localStorage.getItem('token');
-        await fetch('/api/videos/progress', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': token ? `Bearer ${token}` : ''
-          },
-          body: JSON.stringify({ lesson_id: currentLesson.id, completed: true })
-        });
+        await videosApi.recordProgress(currentLesson.id, true);
       } catch (err) {
         console.error("Progress record error:", err);
       }

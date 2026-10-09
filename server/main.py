@@ -22,10 +22,11 @@ dotenv.load_dotenv()
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+from typing import Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from config import settings
 from database import engine, Base
 
@@ -199,11 +200,21 @@ app.include_router(upload_router)
 from routes.public import router as public_router
 app.include_router(public_router)
 
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket, WebSocketDisconnect, Query
 from utils.websocket_manager import manager
+from utils.jwt import decode_token
 
 @app.websocket("/ws/{org_id}/{user_id}")
-async def websocket_endpoint(websocket: WebSocket, org_id: str, user_id: str):
+async def websocket_endpoint(websocket: WebSocket, org_id: str, user_id: str, token: Optional[str] = Query(None)):
+    if not token:
+        await websocket.close(code=4001, reason="Authentication token required")
+        return
+
+    payload = decode_token(token)
+    if not payload or payload.get("type") != "access" or payload.get("sub") != user_id:
+        await websocket.close(code=4001, reason="Unauthorized token or user mismatch")
+        return
+
     await manager.connect(websocket, user_id, org_id)
     try:
         while True:
@@ -239,7 +250,7 @@ def db_health_check():
     try:
         from database import SessionLocal
         db = SessionLocal()
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db.close()
         results["sqlite"] = "connected"
     except Exception as e:

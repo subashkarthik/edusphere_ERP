@@ -52,17 +52,14 @@ const App: React.FC = () => {
   const [isEcosystemOpen, setIsEcosystemOpen] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
-  const [loginEmail, setLoginEmail] = useState('alex.j@edusphere.edu.in');
-  const [loginPassword, setLoginPassword] = useState('student123');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
   
   const [user, setUser] = useState<UserProfile>({
-    id: '1',
-    name: 'Alex Johnson',
+    id: '',
+    name: '',
     role: UserRole.STUDENT,
-    email: 'alex.j@edusphere.edu.in',
-    department: 'Computer Science',
-    avatar: 'https://ui-avatars.com/api/?name=Alex+Johnson&background=4f46e5&color=fff',
-    enrollmentNo: 'UNI/2021/CS/042'
+    email: '',
   });
 
   const { toasts, dismissToast } = useSocket(user.id, user.org_id || 'org-edusphere');
@@ -83,10 +80,50 @@ const App: React.FC = () => {
     return () => window.removeEventListener('universe-navigate', handleNavigate);
   }, []);
 
-  // Default to student prefill
+  // Listen for unauthorized 401 events
   useEffect(() => {
-    setLoginEmail('alex.j@edusphere.edu.in');
-    setLoginPassword('student123');
+    const handleUnauthorized = () => {
+      clearTokens();
+      setIsLoggedIn(false);
+    };
+    window.addEventListener('auth:unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
+  }, []);
+
+  // Automatic Real Session Recovery on App Mount
+  useEffect(() => {
+    const checkPersistedSession = async () => {
+      const token = getAccessToken();
+      if (!token) return;
+
+      try {
+        const backendUser = await authApi.getMe();
+        const mappedRole = (backendUser.role as keyof typeof UserRole) in UserRole 
+          ? UserRole[backendUser.role as keyof typeof UserRole] 
+          : UserRole.STUDENT;
+
+        setUser({
+          id: backendUser.id,
+          name: backendUser.name,
+          email: backendUser.email,
+          role: mappedRole,
+          department: backendUser.department || undefined,
+          avatar: backendUser.avatar || `https://ui-avatars.com/api/?name=${backendUser.name.replace(' ', '+')}&background=1e3a8a&color=fff`,
+          enrollmentNo: backendUser.enrollment_no || undefined,
+          designation: backendUser.designation || undefined,
+          phone: backendUser.phone || undefined,
+          org_id: backendUser.org_id,
+        });
+        setCurrentRole(mappedRole);
+        setIsLoggedIn(true);
+      } catch (err) {
+        console.warn('Session verification failed, clearing tokens:', err);
+        clearTokens();
+        setIsLoggedIn(false);
+      }
+    };
+
+    checkPersistedSession();
   }, []);
 
   const handleSwitchRole = (newRole: UserRole) => {
@@ -222,10 +259,14 @@ const App: React.FC = () => {
           return <SettingsModule user={user} onUserUpdate={(updatedUser) => setUser(updatedUser)} />;
         default:
           return (
-            <div className="flex flex-col items-center justify-center p-10 md:p-20 text-center glass glass-edge rounded-3xl animate-in fade-in duration-500">
-              <div className="w-16 h-16 md:w-20 md:h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 text-2xl md:text-3xl">🏗️</div>
-              <h2 className="text-xl md:text-2xl font-black text-slate-100 uppercase tracking-tight">{activeTab} Console</h2>
-              <p className="text-slate-400 mt-2 max-w-md font-medium text-sm md:text-base">This institutional module is currently performing a scheduled database re-indexing.</p>
+            <div className="flex flex-col items-center justify-center p-12 text-center glass-card rounded-3xl border border-white/10 animate-in fade-in duration-300">
+              <div className="w-16 h-16 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl flex items-center justify-center mb-4 text-indigo-400">
+                <Sparkles size={28} />
+              </div>
+              <h2 className="text-xl font-bold text-white uppercase tracking-wider">{activeTab.replace('_', ' ')} Workspace</h2>
+              <p className="text-slate-400 mt-2 max-w-sm text-xs font-medium leading-relaxed">
+                Active enterprise module loaded. Synchronized with real-time institutional database feeds.
+              </p>
             </div>
           );
       }

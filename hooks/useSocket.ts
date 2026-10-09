@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ToastMessage } from '../components/LiveNotificationToast';
+import { getAccessToken } from '../services/api';
 
 export function useSocket(userId: string, orgId: string = 'org-edusphere') {
   const socket = useRef<WebSocket | null>(null);
@@ -11,11 +12,12 @@ export function useSocket(userId: string, orgId: string = 'org-edusphere') {
   useEffect(() => {
     if (!userId) return;
 
+    const token = getAccessToken();
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = (window.location.port === '3000' || window.location.port === '5173')
       ? `${window.location.hostname}:5000`
       : window.location.host;
-    const wsUrl = `${protocol}//${host}/ws/${orgId}/${userId}`;
+    const wsUrl = `${protocol}//${host}/ws/${orgId}/${userId}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
     
     let isSubscribed = true;
 

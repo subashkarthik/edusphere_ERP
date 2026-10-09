@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from database import get_db
 from models.user import User, UserRole
@@ -6,14 +6,15 @@ from schemas.auth import LoginRequest, RegisterRequest, TokenResponse, RefreshRe
 from utils.password import hash_password, verify_password
 from utils.jwt import create_access_token, create_refresh_token, decode_token
 from middleware.auth import get_current_user, require_roles
+from config import settings
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(request: LoginRequest, db: Session = Depends(get_db)):
+def login(request_data: LoginRequest, request: Request, db: Session = Depends(get_db)):
     """Authenticate user with Email / Register No / Mobile No + password."""
-    ident = (request.identifier or request.email or "").strip()
+    ident = (request_data.identifier or request_data.email or "").strip()
     if not ident:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -30,7 +31,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
         )
     ).first()
 
-    if not user or not verify_password(request.password, user.password_hash):
+    if not user or not verify_password(request_data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials. Check your Email, Register No, Phone or Password.",
@@ -45,12 +46,15 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     user.refresh_token = refresh_token
     db.commit()
 
-    # Dispatch Security Multi-Channel Alert
-    try:
-        from services.notification_dispatcher import dispatch_security_alert
-        dispatch_security_alert(user.name, user.phone or "9876540001", user.email, "127.0.0.1")
-    except Exception as ne:
-        print(f"[SECURITY ALERT ERROR] {ne}")
+    # Dispatch Security Multi-Channel Alert (Only when feature flag is explicitly enabled)
+    if settings.ENABLE_SECURITY_ALERTS:
+        try:
+            client_ip = request.client.host if request.client else "127.0.0.1"
+            if user.phone and user.email:
+                from services.notification_dispatcher import dispatch_security_alert
+                dispatch_security_alert(user.name, user.phone, user.email, client_ip)
+        except Exception as ne:
+            print(f"[SECURITY ALERT ERROR] {ne}")
 
     return TokenResponse(
         access_token=access_token,
@@ -89,10 +93,11 @@ def register_public(request: RegisterRequest, db: Session = Depends(get_db)):
 
     # Role Security Checks
     if requested_role == UserRole.FACULTY:
-        if (request.faculty_key or "").strip() != "FACULTY-2026-KEY":
+        invite_key = settings.FACULTY_INVITE_KEY.strip()
+        if not invite_key or (request.faculty_key or "").strip() != invite_key:
             raise HTTPException(
                 status_code=403,
-                detail="Forbidden: Invalid Faculty Authorization Key. Enter 'FACULTY-2026-KEY' or contact Registrar."
+                detail="Forbidden: Invalid or unconfigured Faculty Authorization Key. Contact Registrar."
             )
     elif requested_role == UserRole.ADMIN:
         raise HTTPException(

@@ -50,6 +50,40 @@ async def get_current_user(
     return user
 
 
+security_optional = HTTPBearer(auto_error=False)
+
+
+async def get_current_user_from_token(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
+    token: Optional[str] = None,
+    db: Session = Depends(get_db),
+) -> User:
+    tok = credentials.credentials if (credentials and credentials.credentials) else token
+    if not tok:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    payload = decode_token(tok)
+    if payload is None or payload.get("type") != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject")
+
+    user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
+
+    return user
+
+
 def require_roles(allowed_roles: List[UserRole]):
     """
     Factory for a FastAPI dependency that restricts access to specific user roles.

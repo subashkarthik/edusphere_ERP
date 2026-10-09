@@ -153,19 +153,34 @@ def revoke_certificate(
     return {"message": "Certificate revoked successfully", "id": cert.id, "status": "REVOKED"}
 
 
+from middleware.auth import get_current_user, require_roles, get_current_user_from_token
+
 @router.get("/download-pdf/{filename}")
-def download_certificate_pdf(filename: str):
+def download_certificate_pdf(
+    filename: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_from_token)
+):
     file_path = os.path.join(STORAGE_DIR, filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="PDF certificate file not found")
     
-    # Trigger Multi-Channel SMS & Email Alert
-    try:
-        from services.notification_dispatcher import dispatch_certificate_alert
-        code = filename.replace(".pdf", "")
-        dispatch_certificate_alert("Alex Johnson", "9876540001", "alex.j@edusphere.edu.in", code, "Ethical Hacking & Cyber Security")
-    except Exception as ne:
-        print(f"[NOTIFICATION TRIGGER ERROR] {ne}")
+    code = filename.replace(".pdf", "")
+
+    # Role & Ownership security check: Admin and Faculty can access any certificate PDF; Student can only download their own.
+    if current_user.role not in [UserRole.ADMIN, UserRole.FACULTY]:
+        cert = db.query(Certificate).filter(Certificate.certificate_code == code).first()
+        if cert and cert.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Forbidden: You are not authorized to download this certificate")
+
+    # Trigger Multi-Channel SMS & Email Alert if enabled
+    from config import settings
+    if settings.ENABLE_SECURITY_ALERTS:
+        try:
+            from services.notification_dispatcher import dispatch_certificate_alert
+            dispatch_certificate_alert(current_user.name, current_user.phone or "", current_user.email, code, "Institutional Certification")
+        except Exception as ne:
+            print(f"[NOTIFICATION TRIGGER ERROR] {ne}")
 
     return FileResponse(
         path=file_path,
