@@ -70,59 +70,24 @@ from middleware.rate_limit import RateLimitMiddleware
 from middleware.validation import InputValidationMiddleware, SecurityHeadersMiddleware
 from middleware.logging import RequestLoggingMiddleware
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from services.analytics import run_analytics_job
-from services.legacy_sync import sync_agent
-import asyncio
-
-# Wrapper for synchronous legacy sync job
-def run_legacy_sync_job():
-    sync_agent.run_sync()
-
-# ─── SCHEDULER ───
-scheduler = AsyncIOScheduler()
-scheduler.add_job(run_analytics_job, 'interval', minutes=60) # Run every hour
-scheduler.add_job(run_legacy_sync_job, 'interval', minutes=30) # Sync legacy DBs every 30 minutes
-
 # ─── LIFESPAN ───
 @asynccontextmanager
 async def lifespan(app):
+    # Ensure database schema tables are created
     Base.metadata.create_all(bind=engine)
-    
-    # Auto-seed database if empty/outdated asynchronously (non-blocking for fast Gunicorn startup)
-    try:
-        from database import SessionLocal
-        from models.user import User
-        from utils.production_seeder import generate_production_data
-        db = SessionLocal()
-        user_count = db.query(User).count()
-        db.close()
-        if user_count < 50:
-            print("[LIFESPAN] Database user count low. Launching production data seeder asynchronously...")
-            loop = asyncio.get_event_loop()
-            loop.run_in_executor(None, generate_production_data)
-    except Exception as se:
-        print(f"[LIFESPAN SEED WARNING] Auto-seed check failed: {se}")
 
-    # Initialize Redis for WebSockets
-    from utils.websocket_manager import manager
-    await manager.initialize_redis()
-
-    # Trigger Initial database legacy sync on startup asynchronously
+    # Initialize Redis for WebSockets if available
     try:
-        loop = asyncio.get_event_loop()
-        loop.run_in_executor(None, sync_agent.run_sync)
+        from utils.websocket_manager import manager
+        await manager.initialize_redis()
     except Exception as e:
-        print(f"[LIFESPAN ERROR] Legacy sync startup run failed: {e}")
-    
-    scheduler.start()
-    print("[OK] Background task scheduler started")
+        print(f"[LIFESPAN] Redis init skipped: {e}")
+
     print("[OK] EduSphere LMS API server started")
     print("[DOCS] API Docs: http://localhost:5000/api/docs")
     print("[DOCS] ReDoc: http://localhost:5000/api/redoc")
     yield
-    scheduler.shutdown()
-    print("[OK] Background task scheduler stopped")
+    print("[OK] EduSphere LMS API server shutdown")
 
 
 
