@@ -472,3 +472,23 @@ export const reportsApi = {
   }
 };
 
+export interface AppNotification {
+  id: string;
+  user_id: string;
+  org_id: string;
+  type: string;
+  title: string;
+  message: string;
+  read: boolean;
+  is_read?: boolean;
+  link?: string | null;
+  created_at: string;
+}
+
+export const notificationsApi = {
+  list: (limit = 50) => apiFetch<{ unread_count: number; notifications: AppNotification[] }>(`/notifications?limit=${limit}`),
+  markRead: (id: string) => apiFetch<{ message: string; notification: AppNotification; unread_count: number }>(`/notifications/${id}/read`, { method: 'POST' }),
+  markAllRead: () => apiFetch<{ message: string; unread_count: number }>(`/notifications/read-all`, { method: 'POST' })
+};
+
+

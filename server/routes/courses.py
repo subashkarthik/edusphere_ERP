@@ -11,6 +11,7 @@ from schemas.schemas import CourseCreate, CourseResponse, EnrollRequest, Materia
 from middleware.auth import get_current_user, require_roles
 from models.synced_legacy import SyncedSubject
 from access_db import get_faculty_by_id
+from services.notification_service import notify_enrollment
 
 
 router = APIRouter(prefix="/api/courses", tags=["Courses"])
@@ -292,7 +293,7 @@ def self_enroll(
     404 if course not found or inactive.
     Uses EnrollmentStatus enum.
     """
-    if current_user.role != UserRole.STUDENT:
+    if current_user.role not in [UserRole.STUDENT, "STUDENT"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: Only students can self-enroll in courses."
@@ -335,6 +336,12 @@ def self_enroll(
     db.add(new_enrollment)
     db.commit()
     db.refresh(new_enrollment)
+
+    # Dispatch notification event
+    try:
+        notify_enrollment(db, current_user.id, course)
+    except Exception:
+        pass
 
     return {
         "message": f"Successfully enrolled in {course.name}",
@@ -430,6 +437,10 @@ def enroll_students(
         enrollment = Enrollment(student_id=student_id, course_id=course_id, status=EnrollmentStatus.ACTIVE)
         db.add(enrollment)
         enrolled_count += 1
+        try:
+            notify_enrollment(db, student_id, course)
+        except Exception:
+            pass
 
     db.commit()
     return {"message": f"Enrolled {enrolled_count} students in {course.name}"}

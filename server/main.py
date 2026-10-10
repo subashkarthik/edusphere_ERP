@@ -64,6 +64,7 @@ from routes.placements import router as placements_router
 from routes.certificates import router as certificates_router
 from routes.upload import router as upload_router
 from routes.reports import router as reports_router
+from routes.notifications import router as notifications_router
 
 # Import middleware
 
@@ -163,6 +164,7 @@ app.include_router(placements_router)
 app.include_router(certificates_router)
 app.include_router(upload_router)
 app.include_router(reports_router)
+app.include_router(notifications_router)
 
 from routes.public import router as public_router
 app.include_router(public_router)

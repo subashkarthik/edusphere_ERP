@@ -60,11 +60,12 @@ export function useSocket(userId: string, orgId: string = 'org-edusphere') {
               };
               setToasts((prev) => [toast, ...prev].slice(0, 5));
             } else if (data.type === 'NOTIFICATION') {
+              const notifObj = data.data || data;
               const toast: ToastMessage = {
                 id: String(Date.now()),
-                type: data.type,
-                title: data.title || 'System Notification',
-                message: data.message || '',
+                type: notifObj.type || data.type,
+                title: notifObj.title || data.title || 'System Notification',
+                message: notifObj.message || data.message || '',
                 timestamp: 'Just now'
               };
               setToasts((prev) => [toast, ...prev].slice(0, 5));

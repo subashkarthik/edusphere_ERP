@@ -333,22 +333,25 @@ async def grade_submission(
 
     db.commit()
 
-    # Dispatch Multi-Channel SMS & Email Alert
+    # Dispatch Real-time Notification + WebSocket + SMTP Email
     try:
-        from services.notification_dispatcher import dispatch_grading_alert
-        student = submission.student
-        asg_title = submission.assignment.title if submission.assignment else "Assignment Submission"
-        max_m = submission.assignment.max_marks if submission.assignment else 100
-        if student:
-            dispatch_grading_alert(
-                user_name=student.name,
-                phone=student.phone or "9876540001",
-                email=student.email,
-                assignment_title=asg_title,
-                marks_obtained=grade_data.marks_obtained,
-                max_marks=max_m,
-                feedback=grade_data.feedback or "Great evaluation performance."
-            )
+        from services.notification_service import notify_assignment_graded
+        course = submission.assignment.course if (submission.assignment and submission.assignment.course) else None
+        if not course and submission.assignment:
+            # Create a mock course object container if course relationship is loose
+            class MockCourse:
+                code = "COURSE"
+                name = submission.assignment.course_id
+                org_id = submission.org_id
+            course = MockCourse()
+
+        notify_assignment_graded(
+            db=db,
+            student_id=submission.student_id,
+            course=course,
+            assignment=submission.assignment,
+            submission=submission
+        )
     except Exception as ne:
         print(f"[NOTIFICATION TRIGGER ERROR] {ne}")
 

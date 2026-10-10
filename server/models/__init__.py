@@ -11,6 +11,7 @@ from models.audit import AuditLog
 from models.intelligence import LearningMetric, Recommendation, UserNotification
 from models.content import Module, Lesson, Assignment, Submission, Discussion, LessonProgress
 from models.certificate import Certificate, CertificateSetting, CertificateStatus
+from models.notification import Notification
 from models.synced_legacy import (
     SyncedSubject, SyncedFaculty, SyncedRoom, SyncedTimeSlot,
     SyncedTimetable, SyncedSemester, SyncedAttendance
@@ -26,7 +27,7 @@ __all__ = [
 
     "PlacementDrive", "PlacementApplication", "PlacementStats",
     "Announcement", "AuditLog", "LeaveRequest", "LibraryBook", "BookIssue",
-    "LearningMetric", "Recommendation", "UserNotification",
+    "LearningMetric", "Recommendation", "UserNotification", "Notification",
     "Module", "Lesson", "Assignment", "Submission", "Discussion", "LessonProgress",
     "Certificate", "CertificateSetting", "CertificateStatus",
     "SyncedSubject", "SyncedFaculty", "SyncedRoom", "SyncedTimeSlot",

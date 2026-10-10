@@ -16,6 +16,7 @@ from schemas.schemas import (
 )
 from middleware.auth import get_current_user, require_roles
 from models.synced_legacy import SyncedAttendance, SyncedTimetable, SyncedSubject
+from services.notification_service import notify_attendance_warning
 
 router = APIRouter(prefix="/api/attendance", tags=["Attendance"])
 
@@ -96,6 +97,25 @@ def mark_course_attendance(
         marked_count += 1
 
     db.commit()
+
+    # Check for students whose attendance percentage is below 75%
+    try:
+        total_sessions = db.query(AttendanceSession).filter(AttendanceSession.course_id == course.id).count()
+        if total_sessions > 0:
+            for item in marks_list:
+                st_id = item.student_id if hasattr(item, "student_id") else item.get("student_id")
+                if not st_id:
+                    continue
+                attended = db.query(AttendanceLog).join(AttendanceSession).filter(
+                    AttendanceSession.course_id == course.id,
+                    AttendanceLog.student_id == st_id,
+                    AttendanceLog.status.in_([AttendanceStatus.PRESENT, AttendanceStatus.LATE])
+                ).count()
+                pct = round((attended / total_sessions) * 100, 1)
+                if pct < 75.0:
+                    notify_attendance_warning(db, st_id, course, pct)
+    except Exception:
+        pass
 
     return {
         "message": f"Successfully recorded attendance for {marked_count} students.",

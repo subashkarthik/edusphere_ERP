@@ -381,17 +381,10 @@ def create_quiz(
 
     db.commit()
 
-    # WebSocket broadcast alert if available
+    # Dispatch notifications to all enrolled students
     try:
-        from utils.websocket_manager import manager
-        import asyncio
-        asyncio.create_task(manager.broadcast_to_institution({
-            "type": "NOTIFICATION",
-            "title": "New Quiz Published",
-            "message": f"Quiz '{quiz.title}' is now live!",
-            "category": "QUIZ",
-            "target_role": "STUDENT"
-        }, current_user.org_id))
+        from services.notification_service import notify_quiz_published
+        notify_quiz_published(db, course, quiz)
     except Exception:
         pass
 

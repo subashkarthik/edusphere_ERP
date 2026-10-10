@@ -233,6 +233,15 @@ def evaluate_certificate(
 ):
     try:
         cert = evaluate_and_issue_certificate(db, payload.student_id, payload.course_id, current_user.org_id)
+        if cert.eligibility_status == CertificateStatus.ISSUED:
+            try:
+                from services.notification_service import notify_certificate_issued
+                course = db.query(Course).filter(Course.id == payload.course_id).first()
+                if course:
+                    notify_certificate_issued(db, payload.student_id, course, cert)
+            except Exception:
+                pass
+
         return {
             "message": "Certificate evaluated successfully",
             "id": cert.id,
@@ -261,6 +270,15 @@ def revoke_certificate(
 
     cert.eligibility_status = CertificateStatus.REVOKED
     db.commit()
+
+    try:
+        from services.notification_service import notify_certificate_revoked
+        course = db.query(Course).filter(Course.id == cert.course_id).first()
+        if course:
+            notify_certificate_revoked(db, cert.user_id, course, cert)
+    except Exception:
+        pass
+
     return {"message": "Certificate revoked successfully", "id": cert.id, "status": "REVOKED"}
 
 
