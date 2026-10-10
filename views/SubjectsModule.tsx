@@ -28,9 +28,9 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
   const [loadingStudents, setLoadingStudents] = useState(false);
 
   const fallbackCourses = [
-    { id: 'crs-cc', code: 'CYB101', name: 'Ethical Hacking & AI', credits: 4, enrolled_count: 87, progress: 94, faculty_name: 'Dr. Arun Kumar', schedule: 'Mon, Wed 09:00 AM', category: 'Cyber Security' },
-    { id: 'crs-mad', code: 'PRG201', name: 'Python Programming', credits: 3, enrolled_count: 65, progress: 88, faculty_name: 'Prof. S. Devi', schedule: 'Tue, Thu 11:30 AM', category: 'Programming Languages' },
-    { id: 'crs-ml', code: 'PRG205', name: 'SQL Database Engineering', credits: 4, enrolled_count: 54, progress: 92, faculty_name: 'Dr. P. Raj', schedule: 'Fri 02:00 PM', category: 'Programming Languages' },
+    { id: 'course-cs101', code: 'CS101', name: 'Cloud Computing & Distributed Systems', credits: 4, enrolled_count: 10, progress: 95, faculty_name: 'Dr. Alan Turing', schedule: 'Mon, Wed 10:00 AM', category: 'Computer Science' },
+    { id: 'course-cs201', code: 'CS201', name: 'Data Structures & Algorithms', credits: 4, enrolled_count: 10, progress: 88, faculty_name: 'Dr. Ada Lovelace', schedule: 'Tue, Thu 02:00 PM', category: 'Computer Science' },
+    { id: 'course-cs301', code: 'CS301', name: 'Machine Learning & Neural Foundations', credits: 4, enrolled_count: 3, progress: 50, faculty_name: 'Dr. Alan Turing', schedule: 'Fri 09:00 AM', category: 'Computer Science' },
   ];
 
   // For students, fetch my-enrollments. For faculty/admins, fetch all courses.
