@@ -367,6 +367,9 @@ export const systemApi = {
 
 // ---------- Dashboard API ----------
 export const dashboardApi = {
+  getStudentDashboard: () => apiFetch<any>('/dashboard/student'),
+  getFacultyDashboard: () => apiFetch<any>('/dashboard/faculty'),
+  getAdminDashboard: () => apiFetch<any>('/dashboard/admin'),
   getMetrics: () => apiFetch<any[]>('/dashboard/metrics'),
   getActivity: () => apiFetch<any[]>('/dashboard/activity'),
   getAnalytics: () => apiFetch<any>('/dashboard/analytics'),
