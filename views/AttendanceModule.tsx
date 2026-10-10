@@ -3,9 +3,9 @@ import { UserRole } from '../types';
 import { 
   Calendar, CheckCircle2, AlertTriangle, Clock, Save, 
   Users, CheckSquare, Search, RefreshCw, BookOpen, AlertCircle,
-  XCircle, Check, ShieldAlert, Loader2, ArrowRight
+  XCircle, Check, ShieldAlert, Loader2, ArrowRight, Download
 } from 'lucide-react';
-import { attendanceApi, coursesApi } from '../services/api';
+import { attendanceApi, coursesApi, reportsApi } from '../services/api';
 import { FullPageLoader } from '../components/LoadingSkeleton';
 import GlassCard from '../components/GlassCard';
 
@@ -60,6 +60,7 @@ const AttendanceModule: React.FC<ModuleProps> = ({ role }) => {
   const [marks, setMarks] = useState<Record<string, 'PRESENT' | 'ABSENT' | 'LATE'>>({});
   const [facultyLoading, setFacultyLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // -------------------------------------------------------------------------
@@ -213,6 +214,25 @@ const AttendanceModule: React.FC<ModuleProps> = ({ role }) => {
 
             {/* Quick Actions */}
             <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={async () => {
+                  if (!selectedCourseId) return;
+                  setExporting(true);
+                  try {
+                    await reportsApi.downloadAttendanceCSV(selectedCourseId);
+                  } catch (e: any) {
+                    alert(e.message || 'Export failed');
+                  } finally {
+                    setExporting(false);
+                  }
+                }}
+                disabled={!selectedCourseId || exporting}
+                className="px-4 py-2.5 glass-btn hover:border-cyan-500/40 text-cyan-400 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all disabled:opacity-50"
+                title="Export course attendance ledger to CSV (Excel format)"
+              >
+                <Download size={16} /> {exporting ? 'Exporting...' : 'Export CSV'}
+              </button>
+
               <button
                 onClick={() => handleMarkAll('PRESENT')}
                 disabled={roster.length === 0 || saving}

@@ -386,3 +386,89 @@ export const certificatesApi = {
     return res.json();
   },
 };
+
+// ---------- Reports API ----------
+export const reportsApi = {
+  getAdminSummary: () => apiFetch<{
+    summary: {
+      total_courses: number;
+      total_enrollments: number;
+      total_certificates: number;
+      overall_attendance_rate: number;
+    };
+    courses: Array<{
+      course_id: string;
+      course_code: string;
+      course_name: string;
+      faculty_name: string;
+      enrollment_count: number;
+      average_attendance: number;
+      average_score: number;
+      certificates_issued: number;
+    }>;
+  }>('/reports/admin/summary'),
+
+  downloadAttendanceCSV: async (courseId?: string) => {
+    const token = getAccessToken();
+    const url = courseId ? `/api/reports/attendance.csv?course_id=${encodeURIComponent(courseId)}` : '/api/reports/attendance.csv';
+    const res = await fetch(url, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Export failed' }));
+      throw new Error(err.detail || 'Failed to export attendance CSV');
+    }
+    const blob = await res.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = `attendance_report_${courseId || 'all'}_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+  },
+
+  downloadMarksCSV: async (courseId?: string) => {
+    const token = getAccessToken();
+    const url = courseId ? `/api/reports/marks.csv?course_id=${encodeURIComponent(courseId)}` : '/api/reports/marks.csv';
+    const res = await fetch(url, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Export failed' }));
+      throw new Error(err.detail || 'Failed to export marks CSV');
+    }
+    const blob = await res.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = `marks_report_${courseId || 'all'}_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+  },
+
+  downloadCertificatesCSV: async (courseId?: string) => {
+    const token = getAccessToken();
+    const url = courseId ? `/api/reports/certificates.csv?course_id=${encodeURIComponent(courseId)}` : '/api/reports/certificates.csv';
+    const res = await fetch(url, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Export failed' }));
+      throw new Error(err.detail || 'Failed to export certificates CSV');
+    }
+    const blob = await res.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = `certificates_report_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+  }
+};
+

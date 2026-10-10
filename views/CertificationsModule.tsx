@@ -5,7 +5,7 @@ import {
   Sliders, User, Check, XCircle, Eye, ShieldAlert, Sparkles
 } from 'lucide-react';
 import { UserRole, UserProfile, CertificateRecord, CertificateSettings } from '../types';
-import { certificatesApi, getAccessToken } from '../services/api';
+import { certificatesApi, reportsApi, getAccessToken } from '../services/api';
 
 interface CertificationsModuleProps {
   user: UserProfile;
@@ -149,6 +149,21 @@ const CertificationsModule: React.FC<CertificationsModuleProps> = ({ user }) => 
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
+            {(isAdmin || isFaculty) && (
+              <button
+                onClick={async () => {
+                  try {
+                    await reportsApi.downloadCertificatesCSV();
+                  } catch (e: any) {
+                    alert(e.message || 'Export failed');
+                  }
+                }}
+                className="px-4 py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all active:scale-95"
+                title="Export certificates ledger to CSV (Excel format)"
+              >
+                <Download size={15} /> Export CSV
+              </button>
+            )}
             {isAdmin && (
               <button
                 onClick={() => setShowSettingsModal(true)}

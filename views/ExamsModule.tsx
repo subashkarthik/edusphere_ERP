@@ -5,7 +5,7 @@ import {
   Plus, FileText, Check, ArrowRight, RefreshCw, AlertTriangle,
   Trash2, BookOpen, Users, BarChart3, HelpCircle, ChevronRight, X
 } from 'lucide-react';
-import { examApi, examsApi, coursesApi } from '../services/api';
+import { examApi, examsApi, coursesApi, reportsApi } from '../services/api';
 import { FullPageLoader } from '../components/LoadingSkeleton';
 import GlassCard from '../components/GlassCard';
 
@@ -369,15 +369,31 @@ export const ExamsModule: React.FC<ModuleProps> = ({ role }) => {
 
           <div className="flex flex-wrap items-center gap-3">
             {isFacultyOrAdmin && (
-              <button
-                onClick={() => {
-                  setCreateFeedback(null);
-                  setShowCreateModal(true);
-                }}
-                className="flex items-center gap-2 px-5 py-2.5 glass-btn-primary text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-indigo-600/30"
-              >
-                <Plus size={16} /> Create Quiz
-              </button>
+              <>
+                <button
+                  onClick={async () => {
+                    try {
+                      await reportsApi.downloadMarksCSV();
+                    } catch (e: any) {
+                      alert(e.message || 'Export failed');
+                    }
+                  }}
+                  className="flex items-center gap-2 px-4 py-2.5 glass-btn hover:border-cyan-500/40 text-cyan-400 font-bold text-xs uppercase tracking-wider rounded-xl transition-all"
+                  title="Export all marks & assessment submissions to CSV"
+                >
+                  <Download size={15} /> Export CSV
+                </button>
+
+                <button
+                  onClick={() => {
+                    setCreateFeedback(null);
+                    setShowCreateModal(true);
+                  }}
+                  className="flex items-center gap-2 px-5 py-2.5 glass-btn-primary text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-indigo-600/30"
+                >
+                  <Plus size={16} /> Create Quiz
+                </button>
+              </>
             )}
 
             <div className="flex bg-slate-900/80 p-1 rounded-xl border border-white/10">
@@ -854,15 +870,31 @@ export const ExamsModule: React.FC<ModuleProps> = ({ role }) => {
                   {attemptsData?.quiz_title || 'Quiz Attempts'}
                 </h3>
               </div>
-              <button
-                onClick={() => {
-                  setViewingAttemptsQuizId(null);
-                  setAttemptsData(null);
-                }}
-                className="p-2 glass-btn rounded-xl text-slate-400 hover:text-white"
-              >
-                <X size={18} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={async () => {
+                    try {
+                      const matchingQuiz = quizzes.find((q) => q.id === viewingAttemptsQuizId);
+                      await reportsApi.downloadMarksCSV(matchingQuiz?.course_id);
+                    } catch (e: any) {
+                      alert(e.message || 'Export failed');
+                    }
+                  }}
+                  className="px-3.5 py-1.5 glass-btn hover:border-cyan-500/40 text-cyan-400 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"
+                  title="Export this course marks to CSV"
+                >
+                  <Download size={14} /> Export Marks CSV
+                </button>
+                <button
+                  onClick={() => {
+                    setViewingAttemptsQuizId(null);
+                    setAttemptsData(null);
+                  }}
+                  className="p-2 glass-btn rounded-xl text-slate-400 hover:text-white"
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             {loadingAttempts ? (

@@ -6,7 +6,11 @@ import {
   AlertCircle, Loader2, RefreshCw, Award, BookOpen,
   FileText, ShieldAlert, Sparkles
 } from 'lucide-react';
-import { dashboardApi, systemApi, announcementsApi } from '../services/api';
+import { dashboardApi, systemApi, announcementsApi, reportsApi } from '../services/api';
+import { 
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, 
+  Tooltip, CartesianGrid, Legend 
+} from 'recharts';
 
 const AdminDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -40,6 +44,29 @@ const AdminDashboard: React.FC = () => {
   const [broadcastPriority, setBroadcastPriority] = useState('MEDIUM');
   const [targetRoles, setTargetRoles] = useState({ ADMIN: true, FACULTY: true, STUDENT: true });
 
+  const [reportData, setReportData] = useState<{
+    summary: {
+      total_courses: number;
+      total_enrollments: number;
+      total_certificates: number;
+      overall_attendance_rate: number;
+    };
+    courses: Array<{
+      course_id: string;
+      course_code: string;
+      course_name: string;
+      faculty_name: string;
+      enrollment_count: number;
+      average_attendance: number;
+      average_score: number;
+      certificates_issued: number;
+    }>;
+  }>({
+    summary: { total_courses: 0, total_enrollments: 0, total_certificates: 0, overall_attendance_rate: 100 },
+    courses: []
+  });
+  const [exportingReport, setExportingReport] = useState<string | null>(null);
+
   const [isAuditing, setIsAuditing] = useState(false);
   const [auditProgress, setAuditProgress] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -47,9 +74,10 @@ const AdminDashboard: React.FC = () => {
   const fetchAdminData = async () => {
     setLoading(true);
     try {
-      const [adminRes, sysConfig] = await Promise.all([
+      const [adminRes, sysConfig, reportSummaryRes] = await Promise.all([
         dashboardApi.getAdminDashboard(),
-        systemApi.getConfig().catch(() => null)
+        systemApi.getConfig().catch(() => null),
+        reportsApi.getAdminSummary().catch(() => null)
       ]);
       if (adminRes) {
         setData(adminRes);
@@ -57,6 +85,9 @@ const AdminDashboard: React.FC = () => {
       if (sysConfig) {
         setCores(sysConfig.cores);
         setMemory(sysConfig.memory);
+      }
+      if (reportSummaryRes) {
+        setReportData(reportSummaryRes);
       }
     } catch (err) {
       console.error('[AdminDashboard] Fetch error:', err);
@@ -365,6 +396,193 @@ const AdminDashboard: React.FC = () => {
               <Bell size={16} /> Broadcast Announcement
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* ---------------------------------------------------------------------- */}
+      {/* INSTITUTIONAL COURSE-WISE REPORTS & ANALYTICS (DB POWERED) */}
+      {/* ---------------------------------------------------------------------- */}
+      <div className="glass-panel p-6 md:p-8 rounded-[32px] border border-white/10 space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="inline-flex items-center gap-2 text-rose-400 text-[10px] font-black uppercase tracking-widest mb-1">
+              <BarChart2 size={14} /> Institutional Academic Performance Reports
+            </div>
+            <h2 className="text-xl md:text-2xl font-black text-white tracking-tight">
+              Course-wise Academic Metrics &amp; Audit Reports
+            </h2>
+            <p className="text-xs text-slate-400 font-medium mt-0.5">
+              Live database aggregated enrollment, average attendance, student assessment scores, and issued certificates.
+            </p>
+          </div>
+
+          {/* Quick Global CSV Export Actions */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={async () => {
+                setExportingReport('attendance');
+                try {
+                  await reportsApi.downloadAttendanceCSV();
+                } catch (e: any) {
+                  setToast({ message: e.message || 'Export failed', type: 'error' });
+                } finally {
+                  setExportingReport(null);
+                }
+              }}
+              disabled={exportingReport !== null}
+              className="px-3.5 py-2 glass-btn hover:border-cyan-500/40 text-cyan-400 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all disabled:opacity-50"
+              title="Download full institutional attendance ledger CSV"
+            >
+              <Download size={14} /> {exportingReport === 'attendance' ? 'Exporting...' : 'Attendance CSV'}
+            </button>
+
+            <button
+              onClick={async () => {
+                setExportingReport('marks');
+                try {
+                  await reportsApi.downloadMarksCSV();
+                } catch (e: any) {
+                  setToast({ message: e.message || 'Export failed', type: 'error' });
+                } finally {
+                  setExportingReport(null);
+                }
+              }}
+              disabled={exportingReport !== null}
+              className="px-3.5 py-2 glass-btn hover:border-amber-500/40 text-amber-400 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all disabled:opacity-50"
+              title="Download full institutional assessment marks CSV"
+            >
+              <Download size={14} /> {exportingReport === 'marks' ? 'Exporting...' : 'Marks CSV'}
+            </button>
+
+            <button
+              onClick={async () => {
+                setExportingReport('certificates');
+                try {
+                  await reportsApi.downloadCertificatesCSV();
+                } catch (e: any) {
+                  setToast({ message: e.message || 'Export failed', type: 'error' });
+                } finally {
+                  setExportingReport(null);
+                }
+              }}
+              disabled={exportingReport !== null}
+              className="px-3.5 py-2 glass-btn hover:border-emerald-500/40 text-emerald-400 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all disabled:opacity-50"
+              title="Download institutional certificates audit ledger CSV"
+            >
+              <Download size={14} /> {exportingReport === 'certificates' ? 'Exporting...' : 'Certificates CSV'}
+            </button>
+          </div>
+        </div>
+
+        {/* Recharts Simple Bar Chart */}
+        {reportData.courses.length > 0 && (
+          <div className="p-5 bg-white/[0.02] border border-white/5 rounded-2xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-300">
+                Course Performance &amp; Completion Overview
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">Aggregated from DB</span>
+            </div>
+
+            <div className="h-72 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={reportData.courses} margin={{ top: 15, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                  <XAxis dataKey="course_code" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                  <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#0f172a',
+                      borderColor: 'rgba(255,255,255,0.1)',
+                      borderRadius: '1rem',
+                      fontSize: '12px',
+                      color: '#fff',
+                      boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                  <Bar dataKey="enrollment_count" name="Enrollments" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="average_attendance" name="Avg Attendance (%)" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="average_score" name="Avg Score (%)" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="certificates_issued" name="Certificates Issued" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
+        {/* Course-Wise Academic Table */}
+        <div className="overflow-x-auto rounded-2xl border border-white/5">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="bg-white/5 border-b border-white/10 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                <th className="py-3.5 px-4">Course</th>
+                <th className="py-3.5 px-4">Faculty</th>
+                <th className="py-3.5 px-4">Enrollments</th>
+                <th className="py-3.5 px-4">Avg Attendance</th>
+                <th className="py-3.5 px-4">Avg Score</th>
+                <th className="py-3.5 px-4">Certificates Issued</th>
+                <th className="py-3.5 px-4 text-right">Export Data</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5 font-medium">
+              {reportData.courses.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-slate-400 font-bold">
+                    No active courses found for reports.
+                  </td>
+                </tr>
+              ) : (
+                reportData.courses.map((c) => (
+                  <tr key={c.course_id} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="py-3.5 px-4">
+                      <div className="font-bold text-white">{c.course_name}</div>
+                      <div className="text-[10px] font-mono text-indigo-400">{c.course_code}</div>
+                    </td>
+                    <td className="py-3.5 px-4 text-slate-300">
+                      {c.faculty_name}
+                    </td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-white">
+                      {c.enrollment_count}
+                    </td>
+                    <td className="py-3.5 px-4 font-mono font-bold">
+                      <span className={c.average_attendance >= 75 ? 'text-emerald-400' : 'text-amber-400'}>
+                        {c.average_attendance}%
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 font-mono font-bold">
+                      <span className={c.average_score >= 50 ? 'text-emerald-400' : 'text-rose-400'}>
+                        {c.average_score}%
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span className="px-2.5 py-1 bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-lg text-xs font-black">
+                        {c.certificates_issued}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => reportsApi.downloadAttendanceCSV(c.course_id)}
+                          className="p-1.5 glass-btn hover:border-cyan-500/40 text-cyan-400 rounded-lg text-[10px] font-bold uppercase transition-all"
+                          title={`Export ${c.course_code} Attendance CSV`}
+                        >
+                          Attn CSV
+                        </button>
+                        <button
+                          onClick={() => reportsApi.downloadMarksCSV(c.course_id)}
+                          className="p-1.5 glass-btn hover:border-amber-500/40 text-amber-400 rounded-lg text-[10px] font-bold uppercase transition-all"
+                          title={`Export ${c.course_code} Marks CSV`}
+                        >
+                          Marks CSV
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
