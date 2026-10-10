@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Bell, HelpCircle, ShieldCheck, Clock, Layers, Command, Sparkles, UserCheck } from 'lucide-react';
+import { Search, Bell, ShieldCheck, Command } from 'lucide-react';
 import { UserProfile, UserRole } from '../types';
 import GlobalSearch from './GlobalSearch';
 import { useSocket } from '../hooks/useSocket';
@@ -7,10 +7,9 @@ import { useSocket } from '../hooks/useSocket';
 interface HeaderProps {
   user: UserProfile;
   onOpenMenu: () => void;
-  onOpenEcosystem: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ user, onOpenMenu, onOpenEcosystem }) => {
+const Header: React.FC<HeaderProps> = ({ user, onOpenMenu }) => {
   const [isSearchOpen, setIsSearchOpen] = React.useState(false);
   const { pulse } = useSocket(user.id, user.org_id);
 
@@ -29,15 +28,6 @@ const Header: React.FC<HeaderProps> = ({ user, onOpenMenu, onOpenEcosystem }) =>
           <div className="w-5 h-0.5 bg-slate-300 rounded-full"></div>
         </button>
 
-        {/* 16-Domain Ecosystem Drawer Launcher */}
-        <button
-          onClick={onOpenEcosystem}
-          className="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 rounded-xl text-indigo-300 transition-all group"
-        >
-          <Layers size={16} className="group-hover:rotate-12 transition-transform" />
-          <span className="text-xs font-black uppercase tracking-wider hidden sm:inline">16 Ecosystem Modules</span>
-        </button>
-
         <div className="hidden md:flex items-center gap-4 text-slate-300">
           <div className="flex items-center gap-2 px-3 py-1.5 badge-emerald rounded-lg">
             <ShieldCheck size={14} />
@@ -46,7 +36,7 @@ const Header: React.FC<HeaderProps> = ({ user, onOpenMenu, onOpenEcosystem }) =>
           <div className="w-[1px] h-4 bg-white/10"></div>
           <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-indigo-300">
             <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-pulse"></div>
-            <span className="text-[10px] font-black uppercase tracking-widest">{pulse.active_users} LIVE</span>
+            <span className="text-[10px] font-black uppercase tracking-widest">{pulse?.active_users || 1} LIVE</span>
           </div>
         </div>
 
@@ -54,7 +44,7 @@ const Header: React.FC<HeaderProps> = ({ user, onOpenMenu, onOpenEcosystem }) =>
         <div className="relative max-w-md w-full hidden md:block ml-2" onClick={() => setIsSearchOpen(true)}>
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
           <div className="w-full glass-input rounded-xl pl-10 pr-4 py-2 text-xs font-medium transition-all flex items-center justify-between cursor-text">
-            <span className="text-slate-400">Search EduSphere University OS...</span>
+            <span className="text-slate-400">Search courses, attendance, quizzes...</span>
             <div className="flex items-center gap-1">
                <span className="px-1.5 py-0.5 glass rounded text-[9px] font-black text-slate-400 tracking-tighter flex items-center gap-0.5"><Command size={8}/>K</span>
             </div>

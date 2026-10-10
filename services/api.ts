@@ -243,27 +243,6 @@ export const uploadApi = {
   },
 };
 
-// ---------- Timetable API ----------
-export const timetableApi = {
-  list: () => apiFetch<any[]>('/timetable/'),
-};
-
-// ---------- Finance API ----------
-export const financeApi = {
-  getLedger: () => apiFetch<any[]>('/finance/ledger'),
-  getFees: () => apiFetch<any[]>('/finance/fees'),
-  makePayment: (data: any) => apiFetch<any>('/finance/payments', { method: 'POST', body: JSON.stringify(data) }),
-  getOutstanding: () => apiFetch<any>('/finance/outstanding'),
-};
-
-// ---------- Placement API ----------
-export const placementApi = {
-  getStats: () => apiFetch<any>('/placements/stats'),
-  getDrives: () => apiFetch<any[]>('/placements/drives'),
-  apply: (driveId: string) => apiFetch<any>(`/placements/drives/${driveId}/apply`, { method: 'POST' }),
-};
-
-
 // ---------- CMS API ----------
 export const cmsApi = {
   getInventory: () => apiFetch<any[]>('/cms/my-inventory'),
@@ -319,14 +298,6 @@ export const cmsApi = {
     }),
   getEnrolledStudents: (courseId: string) =>
     apiFetch<any>(`/cms/courses/${courseId}/students`),
-};
-
-
-// ---------- Library API ----------
-export const libraryApi = {
-  getBooks: () => apiFetch<any[]>('/library/'),
-  issueBook: (bookId: string) => apiFetch<any>(`/library/issue/${bookId}`, { method: 'POST' }),
-  returnBook: (bookId: string) => apiFetch<any>(`/library/return/${bookId}`, { method: 'POST' }),
 };
 
 // ---------- Announcements API ----------

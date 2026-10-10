@@ -27,29 +27,7 @@ export interface NavItem {
   label: string;
   icon: string;
   roles: UserRole[];
-  category: 'core' | 'academic' | 'admin' | 'auxiliary' | 'learning' | 'records' | 'resources' | 'system' | 'ecosystem';
-}
-
-export interface EcosystemModule {
-  id: string;
-  name: string;
-  code: string;
-  category: 'core_operations' | 'academic_excellence' | 'student_lifecycle' | 'auxiliary_services';
-  icon: string;
-  status: 'ACTIVE' | 'DEPLOYED' | 'REALTIME' | 'ENTERPRISE';
-  description: string;
-  metricsSummary: string;
-  kpi: string;
-  kpiLabel: string;
-}
-
-export interface ExecutiveKPI {
-  label: string;
-  value: string | number;
-  change: string;
-  trend: 'up' | 'down' | 'neutral';
-  description: string;
-  category: 'health' | 'finance' | 'academics' | 'compliance';
+  category: 'core' | 'academic' | 'admin' | 'records' | 'system';
 }
 
 export interface AttendanceRecord {
@@ -59,45 +37,6 @@ export interface AttendanceRecord {
   classesHeld: number;
   classesAttended: number;
   status?: 'SAFE' | 'WARNING' | 'CRITICAL';
-}
-
-export interface TimetableEntry {
-  day: string;
-  time: string;
-  course: string;
-  venue: string;
-  faculty?: string;
-  roomType?: string;
-}
-
-export interface PlacementStats {
-  year: string;
-  placed: number;
-  total: number;
-  avgLPA: number;
-  highestLPA?: number;
-}
-
-export interface PlacementDrive {
-  id: string;
-  company: string;
-  logo: string;
-  role: string;
-  ctc: string;
-  eligibilityCgpa: number;
-  status: 'OPEN' | 'INTERVIEWING' | 'CLOSED';
-  applicantsCount: number;
-  deadline: string;
-}
-
-export interface ResearchGrant {
-  id: string;
-  title: string;
-  principalInvestigator: string;
-  agency: string;
-  amount: string;
-  status: 'APPROVED' | 'IN_REVIEW' | 'COMPLETED';
-  department: string;
 }
 
 export interface LibraryBook {

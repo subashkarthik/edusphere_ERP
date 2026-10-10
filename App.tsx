@@ -1,59 +1,40 @@
-
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import AIAssistant from './components/AIAssistant';
 import SplashScreen from './components/SplashScreen';
 import ErrorBoundary from './components/ErrorBoundary';
-import EcosystemDrawer from './components/EcosystemDrawer';
 import { FullPageLoader } from './components/LoadingSkeleton';
 import { UserRole, UserProfile } from './types';
-import { LayoutDashboard, Calendar, Users, Menu, Lock, LogIn, AlertCircle, Loader2, Sparkles, Activity, Layers } from 'lucide-react';
+import { LayoutDashboard, BookOpen, Activity, FileText, Award, Settings, Sparkles } from 'lucide-react';
 import { ROLE_THEMES } from './constants';
-import Logo from './components/Logo';
 import { authApi, setTokens, clearTokens, getAccessToken } from './services/api';
 import { useSocket } from './hooks/useSocket';
 import { LiveNotificationToast } from './components/LiveNotificationToast';
 
-// Core Views
+// Core 5 Pillars + Dashboard Views
 import Dashboard from './views/Dashboard';
 import AttendanceModule from './views/AttendanceModule';
 import SubjectsModule from './views/SubjectsModule';
 import FacultyCMS from './views/FacultyCMS';
 import ExamsModule from './views/ExamsModule';
-import TimetableView from './views/TimetableView';
-import AnnouncementsView from './views/AnnouncementsView';
-import LibraryView from './views/LibraryView';
+import AssignmentModule from './views/AssignmentModule';
+import CertificationsModule from './views/CertificationsModule';
+import UsersModule from './views/UsersModule';
+import SettingsModule from './views/SettingsModule';
 import LearningJourney from './views/LearningJourney';
 import LearningWorkspace from './views/LearningWorkspace';
-import AssignmentModule from './views/AssignmentModule';
-import UsersModule from './views/UsersModule';
-import SystemModule from './views/SystemModule';
-import SettingsModule from './views/SettingsModule';
-import EnterpriseEcosystem from './views/EnterpriseEcosystem';
-import CertificationsModule from './views/CertificationsModule';
-import DegreeAuditView from './views/DegreeAuditView';
-import VoiceVivaModule from './views/VoiceVivaModule';
-import VirtualLab3DView from './views/VirtualLab3DView';
-import SkillQuestView from './views/SkillQuestView';
 import PublicCatalog from './views/PublicCatalog';
 import CertificateVerification from './views/CertificateVerification';
 import { Login } from './components/Login';
 
-
 const App: React.FC = () => {
-  console.log('--- App Component Executing ---');
   const [showSplash, setShowSplash] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedCourse, setSelectedCourse] = useState<any | null>(null);
   const [currentRole, setCurrentRole] = useState<UserRole>(UserRole.STUDENT);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isEcosystemOpen, setIsEcosystemOpen] = useState(false);
-  const [loginError, setLoginError] = useState('');
-  const [loginLoading, setLoginLoading] = useState(false);
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
   
   const [user, setUser] = useState<UserProfile>({
     id: '',
@@ -65,7 +46,7 @@ const App: React.FC = () => {
   const { toasts, dismissToast } = useSocket(user.id, user.org_id || 'org-edusphere');
 
   useEffect(() => {
-    const timer = setTimeout(() => setShowSplash(false), 1200);
+    const timer = setTimeout(() => setShowSplash(false), 800);
     return () => clearTimeout(timer);
   }, []);
 
@@ -90,7 +71,7 @@ const App: React.FC = () => {
     return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
   }, []);
 
-  // Automatic Real Session Recovery on App Mount
+  // Automatic Session Recovery on App Mount
   useEffect(() => {
     const checkPersistedSession = async () => {
       const token = getAccessToken();
@@ -126,79 +107,6 @@ const App: React.FC = () => {
     checkPersistedSession();
   }, []);
 
-  const handleSwitchRole = (newRole: UserRole) => {
-    setCurrentRole(newRole);
-    if (newRole === UserRole.STUDENT) {
-      setUser({
-        id: '1',
-        name: 'Alex Johnson',
-        role: UserRole.STUDENT,
-        email: 'alex.j@edusphere.edu.in',
-        department: 'Computer Science & Engineering',
-        avatar: 'https://ui-avatars.com/api/?name=Alex+Johnson&background=4f46e5&color=fff',
-        enrollmentNo: 'UNI/2021/CS/042'
-      });
-    } else if (newRole === UserRole.FACULTY) {
-      setUser({
-        id: '2',
-        name: 'Dr. Arun Kumar',
-        role: UserRole.FACULTY,
-        email: 'arun.kumar@edusphere.edu.in',
-        department: 'Computer Science & Engineering',
-        avatar: 'https://ui-avatars.com/api/?name=Arun+Kumar&background=059669&color=fff',
-        designation: 'Professor & Dean of Research'
-      });
-    } else if (newRole === UserRole.ADMIN) {
-      setUser({
-        id: '3',
-        name: 'System Registrar',
-        role: UserRole.ADMIN,
-        email: 'admin@edusphere.edu.in',
-        department: 'University Administration',
-        avatar: 'https://ui-avatars.com/api/?name=Admin+Registrar&background=e11d48&color=fff',
-        designation: 'Chief Academic Officer'
-      });
-    }
-  };
-
-  const handleLogin = async () => {
-    if (loginLoading) return;
-    setLoginError('');
-    setLoginLoading(true);
-
-    try {
-      const response = await authApi.login(loginEmail, loginPassword);
-      setTokens(response.access_token, response.refresh_token);
-      
-      // Map backend user to frontend UserProfile
-      const backendUser = response.user;
-      const mappedRole = (backendUser.role as keyof typeof UserRole) in UserRole 
-        ? UserRole[backendUser.role as keyof typeof UserRole] 
-        : UserRole.STUDENT;
-
-      setUser({
-        id: backendUser.id,
-        name: backendUser.name,
-        email: backendUser.email,
-        role: mappedRole,
-        department: backendUser.department || undefined,
-        avatar: backendUser.avatar || `https://ui-avatars.com/api/?name=${backendUser.name.replace(' ', '+')}&background=1e3a8a&color=fff`,
-        enrollmentNo: backendUser.enrollment_no || undefined,
-        designation: backendUser.designation || undefined,
-        org_id: backendUser.org_id,
-      });
-      setCurrentRole(mappedRole);
-      setIsLoggedIn(true);
-      setActiveTab('dashboard');
-      window.dispatchEvent(new CustomEvent('institution-data-sync'));
-    } catch (err: any) {
-      console.error('Login failed:', err);
-      setLoginError(err.message || 'Authentication failed. Is the backend running?');
-    } finally {
-      setLoginLoading(false);
-    }
-  };
-
   const handleLogout = async () => {
     try {
       if (getAccessToken()) {
@@ -210,7 +118,6 @@ const App: React.FC = () => {
     clearTokens();
     setIsLoggedIn(false);
     setActiveTab('dashboard');
-    setLoginError('');
   };
 
   const renderContent = () => {
@@ -218,59 +125,30 @@ const App: React.FC = () => {
       switch (activeTab) {
         case 'dashboard':
           return <Dashboard role={currentRole} />;
-        case 'journey':
-          return <LearningJourney />;
-        case 'attendance':
-          return <AttendanceModule id="attendance" role={currentRole} />;
         case 'academics':
           return <SubjectsModule id="academics" role={currentRole} />;
+        case 'cms':
+          return <FacultyCMS role={currentRole} />;
+        case 'attendance':
+          return <AttendanceModule id="attendance" role={currentRole} />;
         case 'exams':
           return <ExamsModule id="exams" role={currentRole} />;
         case 'assignments':
           return <AssignmentModule role={currentRole} />;
-        case 'degree_audit':
-          return <DegreeAuditView user={user} />;
-        case 'voice_viva':
-          return <VoiceVivaModule />;
-        case 'virtual_lab':
-          return <VirtualLab3DView />;
-        case 'skill_quest':
-          return <SkillQuestView />;
         case 'certificates':
           return <CertificationsModule user={user} />;
-        case 'cms':
-          return <FacultyCMS role={currentRole} />;
-
-        case 'ecosystem':
-          return <EnterpriseEcosystem />;
         case 'users':
           return <UsersModule currentUserRole={currentRole} />;
-        case 'system':
-          return <SystemModule user={user} />;
+        case 'journey':
+          return <LearningJourney />;
         case 'catalog':
           return <PublicCatalog />;
         case 'workspace':
-          return <LearningWorkspace courseData={selectedCourse} onBack={() => setActiveTab('journey')} />;
-        case 'timetable':
-          return <TimetableView role={currentRole} />;
-        case 'announcements':
-          return <AnnouncementsView role={currentRole} />;
-        case 'library':
-          return <LibraryView role={currentRole} />;
+          return <LearningWorkspace courseData={selectedCourse} onBack={() => setActiveTab('academics')} />;
         case 'settings':
           return <SettingsModule user={user} onUserUpdate={(updatedUser) => setUser(updatedUser)} />;
         default:
-          return (
-            <div className="flex flex-col items-center justify-center p-12 text-center glass-card rounded-3xl border border-white/10 animate-in fade-in duration-300">
-              <div className="w-16 h-16 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl flex items-center justify-center mb-4 text-indigo-400">
-                <Sparkles size={28} />
-              </div>
-              <h2 className="text-xl font-bold text-white uppercase tracking-wider">{activeTab.replace('_', ' ')} Workspace</h2>
-              <p className="text-slate-400 mt-2 max-w-sm text-xs font-medium leading-relaxed">
-                Active enterprise module loaded. Synchronized with real-time institutional database feeds.
-              </p>
-            </div>
-          );
+          return <Dashboard role={currentRole} />;
       }
     })();
 
@@ -340,23 +218,12 @@ const App: React.FC = () => {
           <Header 
             user={user} 
             onOpenMenu={() => setIsSidebarOpen(true)}
-            onOpenEcosystem={() => setIsEcosystemOpen(true)}
           />
           
           <main className="flex-1 mt-16 p-4 md:p-10 max-w-[1600px] mx-auto w-full pb-24 lg:pb-10">
             {renderContent()}
           </main>
         </div>
-
-        {/* 16-Domain Ecosystem Modal Drawer */}
-        <EcosystemDrawer 
-          isOpen={isEcosystemOpen}
-          currentRole={currentRole}
-          onClose={() => setIsEcosystemOpen(false)}
-          onSelectModule={(modId) => {
-            setActiveTab('ecosystem');
-          }}
-        />
 
         {/* Mobile Bottom Navigation Bar */}
         <nav className="fixed bottom-0 left-0 right-0 glass-sidebar border-t border-white/[0.06] lg:hidden flex items-center justify-around px-2 py-3 z-[50] safe-bottom">
@@ -368,25 +235,32 @@ const App: React.FC = () => {
             <span className="text-[9px] font-black uppercase tracking-widest">Dash</span>
           </button>
           <button 
-            onClick={() => setIsEcosystemOpen(true)} 
-            className={`flex flex-col items-center gap-1 flex-1 transition-all text-indigo-400`}
+            onClick={() => setActiveTab('academics')} 
+            className={`flex flex-col items-center gap-1 flex-1 transition-all ${activeTab === 'academics' ? 'text-indigo-400' : 'text-slate-500'}`}
           >
-            <Layers size={20} />
-            <span className="text-[9px] font-black uppercase tracking-widest">16 Modules</span>
+            <BookOpen size={20} />
+            <span className="text-[9px] font-black uppercase tracking-widest">Courses</span>
           </button>
           <button 
-            onClick={() => setActiveTab('journey')} 
-            className={`flex flex-col items-center gap-1 flex-1 transition-all ${activeTab === 'journey' ? 'text-indigo-400' : 'text-slate-500'}`}
+            onClick={() => setActiveTab('attendance')} 
+            className={`flex flex-col items-center gap-1 flex-1 transition-all ${activeTab === 'attendance' ? 'text-indigo-400' : 'text-slate-500'}`}
           >
-            <Sparkles size={20} strokeWidth={activeTab === 'journey' ? 2.5 : 2} />
-            <span className="text-[9px] font-black uppercase tracking-widest">Journey</span>
+            <Activity size={20} />
+            <span className="text-[9px] font-black uppercase tracking-widest">Attendance</span>
           </button>
           <button 
-            onClick={() => setIsSidebarOpen(true)} 
-            className={`flex flex-col items-center gap-1 flex-1 text-slate-400`}
+            onClick={() => setActiveTab('exams')} 
+            className={`flex flex-col items-center gap-1 flex-1 transition-all ${activeTab === 'exams' ? 'text-indigo-400' : 'text-slate-500'}`}
           >
-            <Menu size={20} />
-            <span className="text-[9px] font-black uppercase tracking-widest">System</span>
+            <FileText size={20} />
+            <span className="text-[9px] font-black uppercase tracking-widest">Quizzes</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('certificates')} 
+            className={`flex flex-col items-center gap-1 flex-1 transition-all ${activeTab === 'certificates' ? 'text-indigo-400' : 'text-slate-500'}`}
+          >
+            <Award size={20} />
+            <span className="text-[9px] font-black uppercase tracking-widest">Certs</span>
           </button>
         </nav>
 

@@ -19,10 +19,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   // Filter navigation items strictly by role
   const userNavItems = NAVIGATION_ITEMS.filter(item => item.roles.includes(currentRole));
 
-  const operationalItems = userNavItems.filter(item => item.category === 'core' || item.category === 'learning' || item.category === 'ecosystem');
-  const academicItems = userNavItems.filter(item => item.category === 'academic' || item.category === 'records' || item.category === 'resources');
-  const adminItems = userNavItems.filter(item => item.category === 'admin');
-
   return (
     <>
       {/* Mobile Overlay */}
@@ -47,85 +43,28 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-6 scrollbar-hide">
-          
-          {/* Operational Group */}
-          <div className="space-y-1">
-            <p className="px-4 text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3">Operational Hub</p>
-            {operationalItems.map((item) => {
-              const Icon = ICON_MAP[item.icon] || LayoutDashboard;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => { setActiveTab(item.id); onClose(); }}
-                  className={`
-                    w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 group relative overflow-hidden
-                    ${isActive 
-                      ? 'glass-btn-primary text-white shadow-lg shadow-indigo-500/20' 
-                      : 'text-slate-300 hover:text-white hover:bg-white/[0.06]'}
-                  `}
-                >
-                  <Icon size={18} className={isActive ? 'text-white' : 'text-slate-400 group-hover:text-indigo-400 transition-colors'} />
-                  <span className="text-xs font-bold tracking-tight">{item.label}</span>
-                  {isActive && <div className="ml-auto w-1 h-4 bg-white/40 rounded-full"></div>}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Academic & Resources Group */}
-          {academicItems.length > 0 && (
-            <div className="space-y-1">
-              <p className="px-4 text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3">Academic Suite</p>
-              {academicItems.map((item) => {
-                const Icon = ICON_MAP[item.icon] || BookOpen;
-                const isActive = activeTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => { setActiveTab(item.id); onClose(); }}
-                    className={`
-                      w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 group
-                      ${isActive 
-                        ? 'glass-btn-primary text-white shadow-lg shadow-indigo-500/20' 
-                        : 'text-slate-300 hover:text-white hover:bg-white/[0.06]'}
-                    `}
-                  >
-                    <Icon size={18} className={isActive ? 'text-white' : 'text-slate-400 group-hover:text-indigo-400 transition-colors'} />
-                    <span className="text-xs font-bold tracking-tight">{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Admin Group (Gated strictly for ADMIN role) */}
-          {adminItems.length > 0 && (
-            <div className="space-y-1">
-              <p className="px-4 text-[9px] font-black text-rose-400 uppercase tracking-[0.2em] mb-3">Executive Control</p>
-              {adminItems.map((item) => {
-                const Icon = ICON_MAP[item.icon] || Network;
-                const isActive = activeTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => { setActiveTab(item.id); onClose(); }}
-                    className={`
-                      w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 group
-                      ${isActive 
-                        ? 'bg-rose-600 text-white shadow-lg shadow-rose-500/20' 
-                        : 'text-slate-300 hover:text-white hover:bg-white/[0.06]'}
-                    `}
-                  >
-                    <Icon size={18} className={isActive ? 'text-white' : 'text-rose-400 group-hover:text-rose-300 transition-colors'} />
-                    <span className="text-xs font-bold tracking-tight">{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
+        <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-2 scrollbar-hide">
+          <p className="px-4 text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3">Core Modules</p>
+          {userNavItems.map((item) => {
+            const Icon = ICON_MAP[item.icon] || LayoutDashboard;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => { setActiveTab(item.id); onClose(); }}
+                className={`
+                  w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 group relative overflow-hidden
+                  ${isActive 
+                    ? 'glass-btn-primary text-white shadow-lg shadow-indigo-500/20' 
+                    : 'text-slate-300 hover:text-white hover:bg-white/[0.06]'}
+                `}
+              >
+                <Icon size={18} className={isActive ? 'text-white' : 'text-slate-400 group-hover:text-indigo-400 transition-colors'} />
+                <span className="text-xs font-bold tracking-tight">{item.label}</span>
+                {isActive && <div className="ml-auto w-1 h-4 bg-white/40 rounded-full"></div>}
+              </button>
+            );
+          })}
         </nav>
 
         {/* Sidebar Footer */}
@@ -151,13 +90,12 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
           
           <div className="mt-6 px-4 py-4 glass rounded-2xl">
-            <div className="flex items-center gap-3 mb-2">
+            <div className="flex items-center gap-3 mb-1">
               <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]"></div>
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Network Secure</span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">EduSphere ERP</span>
             </div>
             <p className="text-[9px] text-slate-500 font-medium leading-tight">
-              Access from: 192.168.1.42<br/>
-              Last audit: 12m ago
+              5 Pillars Production LMS
             </p>
           </div>
         </div>

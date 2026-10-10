@@ -85,7 +85,7 @@ const NeuralMap: React.FC<{ milestones: any[], onSelectCourse: (c: any) => void 
       
       <div className="absolute bottom-8 left-8 flex items-center gap-2">
          <div className="w-2 h-2 bg-indigo-500 rounded-full animate-ping"></div>
-         <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Quantum Neural Sync Active</span>
+         <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Curriculum Sync Active</span>
       </div>
     </div>
   );
@@ -151,7 +151,7 @@ const LearningJourney: React.FC = () => {
           </div>
           <div>
             <h3 className="font-bold text-lg text-slate-100 tracking-tight">Academic Execution</h3>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Quantum Ledger v5.0</p>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Verified Progress Ledger</p>
           </div>
         </div>
         
