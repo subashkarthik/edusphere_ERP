@@ -28,18 +28,31 @@ interface Module {
 }
 
 interface LearningWorkspaceProps {
-  courseData: {
+  courseData?: {
     id: string;
     title: string;
     activeLessonIndex?: number;
     modules: Module[];
-  };
+  } | null;
   onBack?: () => void;
 }
 
+const defaultModules: Module[] = [
+  {
+    id: 'default-mod',
+    title: 'C Programming Fundamentals',
+    lessons: [
+      { id: 'c-l1', title: '1. Getting Started with C Programming', duration: '12:45', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711172/vidssave.com_1__Getting_Started_with_C_Programming_2025___C_Programming_for_Beginners_1080P_p4zh7l.mp4' },
+      { id: 'c-l2', title: '2. C Variables and Print Output', duration: '15:30', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711662/vidssave.com_2__C_Variables_and_Print_Output___2025_C_Programming_for_Beginners_1080P_zvbax2.mp4' },
+      { id: 'c-l3', title: '3. Get User Input in C Programming', duration: '10:15', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711316/vidssave.com_4__Get_User_Input_in_C_Programming_1080P_k3ca6n.mp4' },
+      { id: 'c-l4', title: '4. Type Conversion in C (Implicit & Explicit)', duration: '14:20', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711479/vidssave.com_7__Type_Conversion_in_C___Implicit_and_Explicit_Type_Conversion_1080P_d9tobz.mp4' }
+    ]
+  }
+];
+
 const LearningWorkspace: React.FC<LearningWorkspaceProps> = ({ courseData, onBack }) => {
   const [activeModule, setActiveModule] = useState(0);
-  const [activeLesson, setActiveLesson] = useState(courseData.activeLessonIndex || 0);
+  const [activeLesson, setActiveLesson] = useState(courseData?.activeLessonIndex || 0);
   const [activeTab, setActiveTab] = useState<'content' | 'discussion' | 'notes'>('content');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [newMessage, setNewMessage] = useState('');
@@ -49,8 +62,11 @@ const LearningWorkspace: React.FC<LearningWorkspaceProps> = ({ courseData, onBac
   const { pulse, messages, send: sendSocket } = useSocket(userId);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const currentLesson = courseData.modules[activeModule].lessons[activeLesson];
-  const courseTitle = courseData.title;
+  const safeModules = courseData?.modules && courseData.modules.length > 0 ? courseData.modules : defaultModules;
+  const currentModule = safeModules[Math.min(activeModule, safeModules.length - 1)] || safeModules[0];
+  const currentLessons = currentModule?.lessons || [];
+  const currentLesson = currentLessons[Math.min(activeLesson, currentLessons.length - 1)] || currentLessons[0];
+  const courseTitle = courseData?.title || 'C Programming Masterclass';
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });

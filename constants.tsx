@@ -32,7 +32,8 @@ import {
   AlertTriangle,
   FolderGit2,
   FileCheck2,
-  Clock
+  Clock,
+  PlayCircle
 } from 'lucide-react';
 import { UserRole, NavItem } from './types';
 
@@ -82,7 +83,16 @@ export const NAVIGATION_ITEMS: NavItem[] = [
     category: 'core' 
   },
 
-  // 2. Courses
+  // 2. Course Videos & Journey (Hero Learning Experience)
+  { 
+    id: 'journey', 
+    label: 'Course Videos', 
+    icon: 'PlayCircle', 
+    roles: [UserRole.STUDENT, UserRole.FACULTY, UserRole.ADMIN], 
+    category: 'core' 
+  },
+
+  // 3. Courses & Catalog
   { 
     id: 'academics', 
     label: 'Courses', 
@@ -91,7 +101,7 @@ export const NAVIGATION_ITEMS: NavItem[] = [
     category: 'academic' 
   },
 
-  // 3. Attendance
+  // 4. Attendance
   { 
     id: 'attendance', 
     label: 'Attendance', 
@@ -100,7 +110,7 @@ export const NAVIGATION_ITEMS: NavItem[] = [
     category: 'records' 
   },
 
-  // 4. Assessments (Quizzes & Assignments)
+  // 5. Assessments (Quizzes & Assignments)
   { 
     id: 'exams', 
     label: 'Quizzes', 
@@ -116,7 +126,7 @@ export const NAVIGATION_ITEMS: NavItem[] = [
     category: 'records' 
   },
 
-  // 5. Certificates
+  // 6. Certificates
   { 
     id: 'certificates', 
     label: 'Certificates', 
@@ -125,7 +135,7 @@ export const NAVIGATION_ITEMS: NavItem[] = [
     category: 'records' 
   },
 
-  // 6. Users (Admin only)
+  // 7. Users (Admin only)
   { 
     id: 'users', 
     label: 'Users', 
@@ -134,7 +144,7 @@ export const NAVIGATION_ITEMS: NavItem[] = [
     category: 'admin' 
   },
 
-  // 7. Settings
+  // 8. Settings
   { 
     id: 'settings', 
     label: 'Settings', 
@@ -145,5 +155,5 @@ export const NAVIGATION_ITEMS: NavItem[] = [
 ];
 
 export const ICON_MAP: Record<string, any> = {
-  LayoutDashboard, BookOpen, Calendar, Users, CreditCard, GraduationCap, FileText, Briefcase, Settings, HelpCircle, Building2, Bus, Library, Megaphone, UserPlus, ShieldCheck, History, Archive, Sparkles, Award, Compass, Cpu, Layers, Network, Activity, Globe, DollarSign, UserCheck, CheckCircle2, AlertTriangle, FolderGit2, FileCheck2, Clock
+  LayoutDashboard, BookOpen, Calendar, Users, CreditCard, GraduationCap, FileText, Briefcase, Settings, HelpCircle, Building2, Bus, Library, Megaphone, UserPlus, ShieldCheck, History, Archive, Sparkles, Award, Compass, Cpu, Layers, Network, Activity, Globe, DollarSign, UserCheck, CheckCircle2, AlertTriangle, FolderGit2, FileCheck2, Clock, PlayCircle
 };
