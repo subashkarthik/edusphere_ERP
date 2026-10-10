@@ -131,15 +131,15 @@ def seed():
             })
             students.append(s)
 
-        print("[4/8] Seeding 3 Courses with Modules and Lessons...")
-        # Course 1
+        print("[4/8] Seeding 2 Core Courses with Real Video Modules and Lessons...")
+        # Course 1: C Programming Masterclass
         course1 = get_or_create(db, Course, {"code": "CS101", "org_id": ORG_ID}, {
-            "name": "Cloud Computing & Distributed Systems",
+            "name": "C Programming Masterclass",
             "credits": 4,
             "department_id": DEPT_ID,
             "faculty_id": faculty_turing.id,
-            "semester": 6,
-            "description": "Enterprise cloud architecture, virtualization, microservices, and distributed consensus.",
+            "semester": 1,
+            "description": "Comprehensive hands-on course in C programming fundamentals, memory pointers, input/output operations, and type conversions.",
             "schedule": "Mon/Wed 10:00 AM",
             "max_students": 60,
             "is_active": True,
@@ -148,14 +148,14 @@ def seed():
             "approved_by_id": admin.id
         })
 
-        # Course 2
+        # Course 2: Java Programming & OOP Architecture
         course2 = get_or_create(db, Course, {"code": "CS201", "org_id": ORG_ID}, {
-            "name": "Data Structures & Algorithms",
+            "name": "Java Programming & OOP Architecture",
             "credits": 4,
             "department_id": DEPT_ID,
             "faculty_id": faculty_lovelace.id,
-            "semester": 4,
-            "description": "Advanced tree structures, graph algorithms, dynamic programming, and complexity analysis.",
+            "semester": 2,
+            "description": "Core Java, Object-Oriented Programming (OOP) design patterns, JVM internals, bytecode execution, and variable data types.",
             "schedule": "Tue/Thu 02:00 PM",
             "max_students": 60,
             "is_active": True,
@@ -164,67 +164,80 @@ def seed():
             "approved_by_id": admin.id
         })
 
-        # Course 3
-        course3 = get_or_create(db, Course, {"code": "CS301", "org_id": ORG_ID}, {
-            "name": "Machine Learning & Neural Foundations",
-            "credits": 4,
-            "department_id": DEPT_ID,
-            "faculty_id": faculty_turing.id,
-            "semester": 8,
-            "description": "Supervised & unsupervised models, deep neural networks, and model deployment pipelines.",
-            "schedule": "Fri 09:00 AM",
-            "max_students": 60,
-            "is_active": True,
-            "approval_status": "APPROVED",
-            "submitted_by_id": faculty_turing.id,
-            "approved_by_id": admin.id
+        # Modules and Lessons for C Programming (CS101)
+        m1 = get_or_create(db, Module, {"course_id": course1.id, "title": "Module 1: C Programming Fundamentals"}, {
+            "org_id": ORG_ID,
+            "description": "Foundational C syntax, variables, IO handling, and data type conversions.",
+            "order_index": 1
+        })
+        l1 = get_or_create(db, Lesson, {"module_id": m1.id, "title": "1. Getting Started with C Programming"}, {
+            "org_id": ORG_ID,
+            "content_type": ContentType.VIDEO,
+            "content_url": "https://res.cloudinary.com/ducisa7vu/video/upload/v1785711172/vidssave.com_1__Getting_Started_with_C_Programming_2025___C_Programming_for_Beginners_1080P_p4zh7l.mp4",
+            "duration_minutes": 13,
+            "order_index": 1
+        })
+        l2 = get_or_create(db, Lesson, {"module_id": m1.id, "title": "2. C Variables and Print Output"}, {
+            "org_id": ORG_ID,
+            "content_type": ContentType.VIDEO,
+            "content_url": "https://res.cloudinary.com/ducisa7vu/video/upload/v1785711662/vidssave.com_2__C_Variables_and_Print_Output___2025_C_Programming_for_Beginners_1080P_zvbax2.mp4",
+            "duration_minutes": 16,
+            "order_index": 2
+        })
+        l3 = get_or_create(db, Lesson, {"module_id": m1.id, "title": "3. Get User Input in C Programming"}, {
+            "org_id": ORG_ID,
+            "content_type": ContentType.VIDEO,
+            "content_url": "https://res.cloudinary.com/ducisa7vu/video/upload/v1785711316/vidssave.com_4__Get_User_Input_in_C_Programming_1080P_k3ca6n.mp4",
+            "duration_minutes": 10,
+            "order_index": 3
+        })
+        l4 = get_or_create(db, Lesson, {"module_id": m1.id, "title": "4. Type Conversion in C (Implicit & Explicit)"}, {
+            "org_id": ORG_ID,
+            "content_type": ContentType.VIDEO,
+            "content_url": "https://res.cloudinary.com/ducisa7vu/video/upload/v1785711479/vidssave.com_7__Type_Conversion_in_C___Implicit_and_Explicit_Type_Conversion_1080P_d9tobz.mp4",
+            "duration_minutes": 14,
+            "order_index": 4
         })
 
-        # Modules and Lessons for CS101
-        m1 = get_or_create(db, Module, {"course_id": course1.id, "title": "Module 1: Cloud Architecture Fundamentals"}, {
+        # Modules and Lessons for Java Programming (CS201)
+        m2 = get_or_create(db, Module, {"course_id": course2.id, "title": "Module 1: Java Core & Object Oriented Programming"}, {
             "org_id": ORG_ID,
-            "description": "Foundational virtualization and cloud computing deployment models.",
+            "description": "JDK installation, JVM bytecode mechanics, OOP design patterns, and variable scope.",
             "order_index": 1
         })
-        l1 = get_or_create(db, Lesson, {"module_id": m1.id, "title": "Lesson 1: Introduction to Distributed Cloud"}, {
+        jl1 = get_or_create(db, Lesson, {"module_id": m2.id, "title": "1. Java Development Kit (JDK) Setup"}, {
             "org_id": ORG_ID,
             "content_type": ContentType.VIDEO,
-            "content_url": "https://www.w3schools.com/html/mov_bbb.mp4",
-            "duration_minutes": 25,
+            "content_url": "https://res.cloudinary.com/ducisa7vu/video/upload/v1785711546/vidssave.com_2_Java_Development_Kit_JDK_Setup_1080P_lzfrg0.mp4",
+            "duration_minutes": 9,
             "order_index": 1
         })
-        l2 = get_or_create(db, Lesson, {"module_id": m1.id, "title": "Lesson 2: Virtualization & Hypervisors"}, {
+        jl2 = get_or_create(db, Lesson, {"module_id": m2.id, "title": "2. First Code in Java"}, {
             "org_id": ORG_ID,
             "content_type": ContentType.VIDEO,
-            "content_url": "https://www.w3schools.com/html/mov_bbb.mp4",
-            "duration_minutes": 30,
+            "content_url": "https://res.cloudinary.com/ducisa7vu/video/upload/v1785711745/vidssave.com_3_First_Code_in_Java_1080P_u6v7fr.mp4",
+            "duration_minutes": 11,
             "order_index": 2
         })
-
-        m2 = get_or_create(db, Module, {"course_id": course1.id, "title": "Module 2: Microservices & Containerization"}, {
-            "org_id": ORG_ID,
-            "description": "Container runtimes, Kubernetes orchestration, and service meshes.",
-            "order_index": 2
-        })
-        l3 = get_or_create(db, Lesson, {"module_id": m2.id, "title": "Lesson 3: Docker Engine & Container Orchestration"}, {
+        jl3 = get_or_create(db, Lesson, {"module_id": m2.id, "title": "3. How Java Works (JVM, JRE & Bytecode)"}, {
             "org_id": ORG_ID,
             "content_type": ContentType.VIDEO,
-            "content_url": "https://www.w3schools.com/html/mov_bbb.mp4",
-            "duration_minutes": 35,
-            "order_index": 1
+            "content_url": "https://res.cloudinary.com/ducisa7vu/video/upload/v1785711883/vidssave.com_4_How_Java_Works_1080P_eril9s.mp4",
+            "duration_minutes": 14,
+            "order_index": 3
         })
-        l4 = get_or_create(db, Lesson, {"module_id": m2.id, "title": "Lesson 4: Cloud Reliability & Fault Tolerance"}, {
+        jl4 = get_or_create(db, Lesson, {"module_id": m2.id, "title": "4. Variables & Data Types in Java"}, {
             "org_id": ORG_ID,
             "content_type": ContentType.VIDEO,
-            "content_url": "https://www.w3schools.com/html/mov_bbb.mp4",
-            "duration_minutes": 40,
-            "order_index": 2
+            "content_url": "https://res.cloudinary.com/ducisa7vu/video/upload/v1785712079/vidssave.com_5_Variables_in_Java_1080P_ugfhwt.mp4",
+            "duration_minutes": 16,
+            "order_index": 4
         })
 
         cs101_lesson_ids = [l1.id, l2.id, l3.id, l4.id]
 
         print("[5/8] Seeding Enrollments and Lesson Progress...")
-        # Enroll all students in CS101 and CS201; top students also in CS301
+        # Enroll all 10 students in CS101 (C Programming) and CS201 (Java Programming)
         for idx, student in enumerate(students):
             get_or_create(db, Enrollment, {"student_id": student.id, "course_id": course1.id}, {
                 "org_id": ORG_ID,
@@ -234,11 +247,6 @@ def seed():
                 "org_id": ORG_ID,
                 "status": EnrollmentStatus.ACTIVE
             })
-            if idx < 3:
-                get_or_create(db, Enrollment, {"student_id": student.id, "course_id": course3.id}, {
-                    "org_id": ORG_ID,
-                    "status": EnrollmentStatus.ACTIVE
-                })
 
         # Student progress:
         # Students 1, 2, 3, 4 completed 100% of CS101 lessons
@@ -300,9 +308,9 @@ def seed():
                 })
 
         print("[7/8] Seeding Quizzes and Assignments with Graded Results...")
-        # Quiz 1 in CS101
-        quiz1 = get_or_create(db, Quiz, {"course_id": course1.id, "title": "Cloud Architecture & Scalability Quiz"}, {
-            "description": "Comprehensive quiz on distributed consensus, virtualization, and scalability.",
+        # Quiz 1 in C Programming (CS101)
+        quiz1 = get_or_create(db, Quiz, {"course_id": course1.id, "title": "C Programming Masterclass Quiz"}, {
+            "description": "Comprehensive quiz on memory pointers, variables, IO handling, and type conversions.",
             "time_limit_minutes": 15,
             "passing_percentage": 50.0,
             "total_marks": 30,
@@ -312,41 +320,41 @@ def seed():
         })
 
         q1 = get_or_create(db, QuizQuestion, {"quiz_id": quiz1.id, "order_num": 1}, {
-            "question_text": "Which principle guarantees consistency and partition tolerance in distributed storage systems?",
-            "option_a": "CAP Theorem (CP mode)",
-            "option_b": "ACID Isolations",
-            "option_c": "Eventual Inconsistency",
-            "option_d": "Round-Robin Scheduling",
+            "question_text": "What is the correct format specifier for printing an integer in C using printf()?",
+            "option_a": "%d",
+            "option_b": "%s",
+            "option_c": "%f",
+            "option_d": "%c",
             "correct_option": "A",
-            "explanation": "According to the CAP theorem, a system cannot simultaneously guarantee Consistency, Availability, and Partition tolerance. In CP mode, consistency is preserved during network partitions.",
+            "explanation": "%d is the standard format specifier used in C to format signed decimal integers.",
             "marks": 10
         })
 
         q2 = get_or_create(db, QuizQuestion, {"quiz_id": quiz1.id, "order_num": 2}, {
-            "question_text": "What type of hypervisor runs directly on the bare metal hardware without an underlying OS?",
-            "option_a": "Type 2 Hosted Hypervisor",
-            "option_b": "Type 1 Bare-Metal Hypervisor",
-            "option_c": "Application Container",
-            "option_d": "Process Sandbox",
-            "correct_option": "B",
-            "explanation": "Type 1 hypervisors (e.g. VMware ESXi, KVM) run directly on host hardware.",
+            "question_text": "Which function in C standard library is used to read formatted input from standard input?",
+            "option_a": "scanf()",
+            "option_b": "printf()",
+            "option_c": "puts()",
+            "option_d": "malloc()",
+            "correct_option": "A",
+            "explanation": "scanf() reads input from stdin according to format specifiers provided.",
             "marks": 10
         })
 
         q3 = get_or_create(db, QuizQuestion, {"quiz_id": quiz1.id, "order_num": 3}, {
-            "question_text": "In Kubernetes, what is the smallest deployable computing unit that can be created and managed?",
-            "option_a": "Pod",
-            "option_b": "Cluster",
-            "option_c": "ReplicaSet",
-            "option_d": "Ingress Controller",
+            "question_text": "What happens during explicit type casting in C like (float)a / b?",
+            "option_a": "The value of a is temporarily converted to float before division",
+            "option_b": "The variable a permanently changes its data type",
+            "option_c": "A runtime exception is thrown",
+            "option_d": "The compiler skips the instruction",
             "correct_option": "A",
-            "explanation": "A Pod encapsulates one or more containers, storage resources, and network configurations.",
+            "explanation": "Explicit type casting coerces the operand value to the specified type for that evaluation.",
             "marks": 10
         })
 
-        # Quiz 2 in CS201
-        quiz2 = get_or_create(db, Quiz, {"course_id": course2.id, "title": "Data Structures Mastery Quiz"}, {
-            "description": "Algorithm efficiency, dynamic programming, and binary search tree mechanics.",
+        # Quiz 2 in Java Programming (CS201)
+        quiz2 = get_or_create(db, Quiz, {"course_id": course2.id, "title": "Java Programming & OOP Architecture Quiz"}, {
+            "description": "Core Java architecture, JVM bytecode execution, and OOP principles.",
             "time_limit_minutes": 20,
             "passing_percentage": 50.0,
             "total_marks": 30,
@@ -356,13 +364,13 @@ def seed():
         })
 
         get_or_create(db, QuizQuestion, {"quiz_id": quiz2.id, "order_num": 1}, {
-            "question_text": "What is the worst-case time complexity of searching in an unbalanced Binary Search Tree?",
-            "option_a": "O(1)",
-            "option_b": "O(log n)",
-            "option_c": "O(n)",
-            "option_d": "O(n log n)",
-            "correct_option": "C",
-            "explanation": "An unbalanced BST degenerates into a linked list in the worst case, yielding O(n) search time.",
+            "question_text": "Which component in the Java environment executes the compiled bytecode (.class files)?",
+            "option_a": "Java Virtual Machine (JVM)",
+            "option_b": "Java Compiler (javac)",
+            "option_c": "Java Archiver (jar)",
+            "option_d": "Source Preprocessor",
+            "correct_option": "A",
+            "explanation": "The JVM interprets and executes bytecode across different operating systems.",
             "marks": 10
         })
 
@@ -408,9 +416,9 @@ def seed():
         })
 
         # 1 Assignment in CS101
-        assignment1 = get_or_create(db, Assignment, {"course_id": course1.id, "title": "Cloud Migration Architecture Blueprint"}, {
+        assignment1 = get_or_create(db, Assignment, {"course_id": course1.id, "title": "C Programming Systems Architecture Project"}, {
             "org_id": ORG_ID,
-            "description": "Design a high-availability migration strategy for an e-commerce platform migrating to multi-region cloud architecture.",
+            "description": "Design a memory-safe dynamic array implementation and custom IO buffer in C with pointer manipulation.",
             "due_date": datetime.utcnow() + timedelta(days=14),
             "max_marks": 100
         })

@@ -1,19 +1,69 @@
 import React, { useState, useEffect } from 'react';
 import { UserRole } from '../types';
-import { ROLE_THEMES } from '../constants';
 import { 
-  Filter, ArrowLeft, ArrowRight, Download, Info, 
-  List, History, LayoutGrid, Search, BookOpen,
-  CheckCircle2, Clock, BarChart2, ShieldCheck, MoreVertical,
-  Layers, ChevronRight, GraduationCap, CheckCircle, Loader2,
-  Users, Sparkles, AlertCircle
+  ArrowLeft, ArrowRight, BookOpen, CheckCircle2, Clock, 
+  PlayCircle, Sparkles, GraduationCap, CheckCircle, Search, 
+  LayoutGrid, List, AlertCircle, Users, Award, Play
 } from 'lucide-react';
 import { useApi } from '../hooks';
-import { coursesApi } from '../services/api';
+import { coursesApi, videosApi } from '../services/api';
 import { FullPageLoader } from '../components/LoadingSkeleton';
 import GlassCard from '../components/GlassCard';
 
 interface ModuleProps { id: string; role: UserRole; }
+
+const COURSE_VIDEOS_DATA: Record<string, any> = {
+  'course-cs101': {
+    id: 'course-cs101',
+    code: 'CS101',
+    semesterLabel: 'Semester 1',
+    name: 'C Programming Masterclass',
+    category: 'Computer Science',
+    credits: 4,
+    faculty_name: 'Dr. Alan Turing',
+    schedule: 'Mon, Wed 10:00 AM',
+    description: 'Comprehensive hands-on course in C programming fundamentals, memory pointers, input/output operations, and type conversions.',
+    skills: ['C Fundamentals', 'Pointers & Memory', 'Type Conversion', 'System IO'],
+    modules: [
+      {
+        id: 'c-mod-1',
+        title: 'C Programming Fundamentals',
+        lessons: [
+          { id: 'c-l1', title: '1. Getting Started with C Programming', duration: '12:45', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711172/vidssave.com_1__Getting_Started_with_C_Programming_2025___C_Programming_for_Beginners_1080P_p4zh7l.mp4' },
+          { id: 'c-l2', title: '2. C Variables and Print Output', duration: '15:30', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711662/vidssave.com_2__C_Variables_and_Print_Output___2025_C_Programming_for_Beginners_1080P_zvbax2.mp4' },
+          { id: 'c-l3', title: '3. Get User Input in C Programming', duration: '10:15', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711316/vidssave.com_4__Get_User_Input_in_C_Programming_1080P_k3ca6n.mp4' },
+          { id: 'c-l4', title: '4. Type Conversion in C (Implicit & Explicit)', duration: '14:20', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711479/vidssave.com_7__Type_Conversion_in_C___Implicit_and_Explicit_Type_Conversion_1080P_d9tobz.mp4' }
+        ]
+      }
+    ]
+  },
+  'course-cs201': {
+    id: 'course-cs201',
+    code: 'CS201',
+    semesterLabel: 'Semester 2',
+    name: 'Java Programming & OOP Architecture',
+    category: 'Computer Science',
+    credits: 4,
+    faculty_name: 'Dr. Ada Lovelace',
+    schedule: 'Tue, Thu 02:00 PM',
+    description: 'Core Java, Object-Oriented Programming (OOP) design patterns, JVM internals, bytecode execution, and variable data types.',
+    skills: ['Java Core', 'JVM & Bytecode', 'OOP Patterns', 'Data Types'],
+    modules: [
+      {
+        id: 'java-mod-1',
+        title: 'Java Core & Object Oriented Programming',
+        lessons: [
+          { id: 'java-l1', title: '1. Java Development Kit (JDK) Setup', duration: '08:50', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711546/vidssave.com_2_Java_Development_Kit_JDK_Setup_1080P_lzfrg0.mp4' },
+          { id: 'java-l2', title: '2. First Code in Java', duration: '11:10', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711745/vidssave.com_3_First_Code_in_Java_1080P_u6v7fr.mp4' },
+          { id: 'java-l3', title: '3. How Java Works (JVM, JRE & Bytecode)', duration: '13:40', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711883/vidssave.com_4_How_Java_Works_1080P_eril9s.mp4' },
+          { id: 'java-l4', title: '4. Variables & Data Types in Java', duration: '16:05', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785712079/vidssave.com_5_Variables_in_Java_1080P_ugfhwt.mp4' }
+        ]
+      }
+    ]
+  }
+};
+
+const DEFAULT_COURSES_LIST = Object.values(COURSE_VIDEOS_DATA);
 
 const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
   const [selectedCourse, setSelectedCourse] = useState<any | null>(null);
@@ -27,19 +77,23 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
   const [enrolledStudents, setEnrolledStudents] = useState<any[]>([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
 
-  const fallbackCourses = [
-    { id: 'course-cs101', code: 'CS101', name: 'Cloud Computing & Distributed Systems', credits: 4, enrolled_count: 10, progress: 95, faculty_name: 'Dr. Alan Turing', schedule: 'Mon, Wed 10:00 AM', category: 'Computer Science' },
-    { id: 'course-cs201', code: 'CS201', name: 'Data Structures & Algorithms', credits: 4, enrolled_count: 10, progress: 88, faculty_name: 'Dr. Ada Lovelace', schedule: 'Tue, Thu 02:00 PM', category: 'Computer Science' },
-    { id: 'course-cs301', code: 'CS301', name: 'Machine Learning & Neural Foundations', credits: 4, enrolled_count: 3, progress: 50, faculty_name: 'Dr. Alan Turing', schedule: 'Fri 09:00 AM', category: 'Computer Science' },
-  ];
-
-  // For students, fetch my-enrollments. For faculty/admins, fetch all courses.
+  // Fetch courses from backend or fallback to the two hero courses
   const fetcher = role === UserRole.STUDENT 
     ? (activeTab === 'catalog' ? () => coursesApi.list(true) : () => coursesApi.myEnrollments())
     : () => coursesApi.list();
 
-  const { data: courses, loading, refetch } = useApi(fetcher, fallbackCourses, [role, activeTab], `subjects-${role}-${activeTab}`);
-  const { data: materials } = useApi(() => selectedCourse ? coursesApi.materials(selectedCourse.id) : Promise.resolve([]), [], [selectedCourse?.id]);
+  const { data: rawCourses, loading, refetch } = useApi(fetcher, DEFAULT_COURSES_LIST, [role, activeTab], `subjects-${role}-${activeTab}`);
+
+  // Merge backend courses with video lessons
+  const courses = (rawCourses && rawCourses.length > 0 ? rawCourses : DEFAULT_COURSES_LIST).map((c: any) => {
+    const videoRef = COURSE_VIDEOS_DATA[c.id] || (c.code?.includes('201') ? COURSE_VIDEOS_DATA['course-cs201'] : COURSE_VIDEOS_DATA['course-cs101']);
+    return {
+      ...videoRef,
+      ...c,
+      modules: videoRef?.modules || c.modules || [],
+      skills: videoRef?.skills || ['Software Engineering', 'Algorithms']
+    };
+  });
 
   // If faculty/admin selects a course, load enrolled students
   useEffect(() => {
@@ -54,13 +108,6 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
         .finally(() => setLoadingStudents(false));
     }
   }, [selectedCourse, role]);
-
-  // Ensure data refreshes on institutional events
-  useEffect(() => {
-    const handleRefresh = () => refetch();
-    window.addEventListener('institution-data-sync', handleRefresh);
-    return () => window.removeEventListener('institution-data-sync', handleRefresh);
-  }, [refetch]);
 
   const handleSelfEnroll = async (c: any) => {
     setEnrollingId(c.id);
@@ -77,212 +124,192 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
     }
   };
 
-  const handleEnterClassroom = (c: any) => {
+  const handleLaunchVideoPlayer = (course: any, lessonIndex: number = 0) => {
+    const videoRef = COURSE_VIDEOS_DATA[course.id] || (course.code?.includes('201') ? COURSE_VIDEOS_DATA['course-cs201'] : COURSE_VIDEOS_DATA['course-cs101']);
     window.dispatchEvent(new CustomEvent('universe-navigate', { 
       detail: { 
         tab: 'workspace', 
         courseData: {
-          id: c.id,
-          title: c.name,
-          name: c.name,
-          code: c.code,
-          modules: [{ id: 'm1', title: 'Main Stream', lessons: materials || [] }]
+          id: course.id,
+          title: `${course.name} - Video Lecture Series`,
+          activeLessonIndex: lessonIndex,
+          modules: videoRef.modules
         }
       } 
     }));
   };
 
-  const filteredCourses = (courses || []).filter(c => 
+  const filteredCourses = courses.filter((c: any) => 
     c.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
     c.code?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Instead of a blocking loader, we use a softer transition if we have data
   if (loading && !courses) return <FullPageLoader />;
 
+  // Detailed Course View with Video Lessons Stream
   if (selectedCourse) {
+    const videoRef = COURSE_VIDEOS_DATA[selectedCourse.id] || (selectedCourse.code?.includes('201') ? COURSE_VIDEOS_DATA['course-cs201'] : COURSE_VIDEOS_DATA['course-cs101']);
+    const lessonsList = videoRef.modules?.[0]?.lessons || [];
+
     return (
-      <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
-        <GlassCard className="p-6 rounded-3xl" hover={false}>
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
-            <div className="flex items-center gap-5 w-full sm:w-auto">
-              <button onClick={() => setSelectedCourse(null)} className="p-2.5 glass-btn rounded-xl shrink-0"><ArrowLeft size={20}/></button>
+      <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500 font-sans pb-12">
+        {/* Course Header Banner */}
+        <GlassCard className="p-8 rounded-[2.5rem]" hover={false}>
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+            <div className="flex items-start gap-5">
+              <button 
+                onClick={() => setSelectedCourse(null)} 
+                className="p-3 glass rounded-2xl text-slate-300 hover:text-white transition-all shrink-0 mt-1"
+              >
+                <ArrowLeft size={20}/>
+              </button>
               <div>
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest badge-indigo px-2 py-0.5 rounded-md">{selectedCourse.code}</span>
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Section A</span>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest bg-indigo-500/10 border border-indigo-500/30 px-2.5 py-1 rounded-lg">
+                    {selectedCourse.code} • {videoRef.semesterLabel || 'Semester Core'}
+                  </span>
+                  <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-lg">
+                    {selectedCourse.credits || 4} Credits
+                  </span>
                 </div>
-                <h2 className="text-xl font-bold text-slate-100 tracking-tight">{selectedCourse.name}</h2>
+                <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight">{selectedCourse.name}</h1>
+                <p className="text-xs text-slate-400 font-medium mt-1 max-w-2xl leading-relaxed">
+                  {selectedCourse.description || videoRef.description}
+                </p>
               </div>
             </div>
-            <div className="flex gap-2 w-full sm:w-auto">
-              <button 
-                onClick={() => window.dispatchEvent(new CustomEvent('universe-navigate', { 
-                  detail: { 
-                    tab: 'workspace', 
-                    courseData: {
-                      id: selectedCourse.id,
-                      title: selectedCourse.name,
-                      modules: [{ id: 'm1', title: 'Main Stream', lessons: materials || [] }]
-                    }
-                  } 
-                }))}
-                className="flex-1 sm:flex-none glass-btn-primary text-white px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-2"
-              >
-                <GraduationCap size={16}/>
-                Enter Classroom
-              </button>
-            </div>
+
+            <button 
+              onClick={() => handleLaunchVideoPlayer(selectedCourse, 0)}
+              className="glass-btn-primary text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center gap-3 shadow-lg shadow-indigo-500/20 active:scale-95 transition-all w-full lg:w-auto justify-center"
+            >
+              <PlayCircle size={18} /> Watch Video Lectures
+            </button>
           </div>
         </GlassCard>
 
+        {/* Video Lessons Stream & Course Intel */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Lessons Stream */}
           <div className="lg:col-span-2 space-y-6">
             <GlassCard className="p-8 rounded-[2.5rem]" hover={false}>
-              <h3 className="font-bold text-slate-100 mb-8 flex items-center gap-3"><BookOpen className="text-indigo-400" size={20}/> Learning Assets</h3>
-              <div className="space-y-3">
-                {(materials || []).length > 0 ? (materials || []).map((m: any, i: number) => (
-                  <div key={i} className="p-4 rounded-2xl glass border border-white/[0.06] hover:border-indigo-500/20 transition-all flex items-center gap-4 group cursor-pointer">
-                    <div className="w-12 h-12 glass rounded-xl flex items-center justify-center font-black text-slate-400 text-[10px] group-hover:text-indigo-400 transition-colors">{m.type || 'DOC'}</div>
-                    <div className="flex-1 overflow-hidden">
-                      <p className="text-sm font-bold text-slate-200 truncate">{m.title}</p>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">{m.date || 'Jan 2025'} • {m.size || 'N/A'}</p>
-                    </div>
-                    <Download size={16} className="text-slate-600 group-hover:text-indigo-400 transition-colors"/>
-                  </div>
-                )) : (
-                   <div className="py-12 text-center text-slate-500 text-xs font-medium border border-dashed border-white/10 rounded-2xl">
-                     Connecting to academic vault... No assets found.
-                   </div>
-                )}
-              </div>
-            </GlassCard>
-
-            {/* Enrolled Students Roster for Faculty / Admin */}
-            {(role === UserRole.FACULTY || role === UserRole.ADMIN) && (
-              <GlassCard className="p-8 rounded-[2.5rem]" hover={false}>
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="font-bold text-slate-100 flex items-center gap-3">
-                    <Users className="text-indigo-400" size={20}/> Enrolled Student Roster
+              <div className="flex items-center justify-between mb-6 border-b border-white/[0.06] pb-4">
+                <div>
+                  <h3 className="font-bold text-lg text-slate-100 flex items-center gap-2.5">
+                    <PlayCircle className="text-indigo-400" size={22} /> Structured Video Lessons ({lessonsList.length} Lectures)
                   </h3>
-                  <span className="px-3 py-1 glass rounded-lg text-[10px] font-black text-indigo-400 uppercase tracking-widest">
-                    {enrolledStudents.length} Students
-                  </span>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Watch all video lessons to complete 100% course progress for certificate eligibility.
+                  </p>
                 </div>
+                <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest bg-emerald-500/10 px-3 py-1 rounded-lg border border-emerald-500/20">
+                  Cloud Stream Ready
+                </span>
+              </div>
 
-                {loadingStudents ? (
-                  <div className="py-12 flex items-center justify-center gap-3 text-slate-400 text-xs font-bold">
-                    <Loader2 size={20} className="animate-spin text-indigo-400" />
-                    <span>Loading student roster...</span>
-                  </div>
-                ) : enrolledStudents.length === 0 ? (
-                  <div className="py-8 text-center text-slate-500 text-xs font-medium border border-dashed border-white/10 rounded-2xl">
-                    No students currently enrolled in this course.
-                  </div>
-                ) : (
-                  <div className="space-y-3 max-h-72 overflow-y-auto scrollbar-hide">
-                    {enrolledStudents.map((st, i) => (
-                      <div key={st.enrollment_id || i} className="p-3.5 rounded-xl glass border border-white/[0.06] flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <img 
-                            src={st.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(st.name)}&background=4f46e5&color=fff`} 
-                            alt={st.name} 
-                            className="w-8 h-8 rounded-lg object-cover" 
-                          />
-                          <div>
-                            <p className="text-xs font-bold text-slate-200">{st.name}</p>
-                            <p className="text-[10px] text-slate-400">{st.email} • {st.enrollment_no || 'N/A'}</p>
-                          </div>
-                        </div>
-                        <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider badge-emerald">
-                          {st.status || 'ACTIVE'}
-                        </span>
+              <div className="space-y-3.5">
+                {lessonsList.map((lesson: any, idx: number) => (
+                  <div 
+                    key={lesson.id || idx}
+                    onClick={() => handleLaunchVideoPlayer(selectedCourse, idx)}
+                    className="p-5 rounded-2xl glass border border-white/[0.06] hover:border-indigo-500/30 hover:bg-indigo-500/[0.04] transition-all flex items-center gap-4 group cursor-pointer"
+                  >
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-500/15 border border-indigo-500/20 flex items-center justify-center text-indigo-400 group-hover:scale-110 group-hover:bg-indigo-500 group-hover:text-white transition-all shrink-0">
+                      <Play size={18} fill="currentColor" />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-bold text-slate-200 group-hover:text-white transition-colors truncate">
+                        {lesson.title}
+                      </h4>
+                      <div className="flex items-center gap-3 mt-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        <span className="flex items-center gap-1"><Clock size={11} /> {lesson.duration}</span>
+                        <span>•</span>
+                        <span className="text-indigo-400">High Definition 1080P</span>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </GlassCard>
-            )}
+                    </div>
 
-            <GlassCard className="p-8 rounded-[2.5rem]" hover={false}>
-              <h3 className="font-bold text-slate-100 mb-8 flex items-center gap-3"><History className="text-indigo-400" size={20}/> Session Intelligence</h3>
-              <div className="overflow-hidden glass rounded-2xl">
-                <table className="w-full text-left text-sm glass-table">
-                  <thead>
-                    <tr><th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Session Date</th><th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Timing</th><th className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-widest text-slate-400">Status</th></tr>
-                  </thead>
-                  <tbody>
-                    {[{ date: 'Oct 12, 2024', status: 'Present', time: '09:05 AM' },{ date: 'Oct 10, 2024', status: 'Present', time: '09:02 AM' },{ date: 'Oct 08, 2024', status: 'Absent', time: '-' }].map((h, i) => (
-                      <tr key={i}>
-                        <td className="px-6 py-4 font-bold text-slate-200 text-xs">{h.date}</td>
-                        <td className="px-6 py-4 text-slate-400 text-xs font-medium">{h.time}</td>
-                        <td className="px-6 py-4 text-right">
-                          <span className={`px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-widest ${h.status === 'Present' ? 'badge-emerald' : 'badge-rose'}`}>{h.status}</span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    <button className="px-4 py-2 glass rounded-xl text-[10px] font-black uppercase tracking-widest text-indigo-300 group-hover:bg-indigo-600 group-hover:text-white transition-all shrink-0">
+                      Play
+                    </button>
+                  </div>
+                ))}
               </div>
             </GlassCard>
           </div>
 
+          {/* Right Sidebar: Faculty & Course Intel */}
           <div className="space-y-6">
-             <GlassCard className="p-8 rounded-[2.5rem]" hover={false}>
-               <div className="flex items-center gap-4 mb-8">
-                 <div className="w-12 h-12 rounded-xl glass flex items-center justify-center text-slate-400 font-bold">AK</div>
-                 <div>
-                   <p className="text-sm font-black text-slate-200">{selectedCourse.faculty_name || 'TBA'}</p>
-                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Senior Professor</p>
-                 </div>
-               </div>
-               <button className="w-full py-3 glass-btn-primary rounded-xl font-bold text-[10px] uppercase tracking-widest text-white">Request Consultation</button>
-             </GlassCard>
+            <GlassCard className="p-8 rounded-[2.5rem]" hover={false}>
+              <h3 className="font-bold text-sm text-slate-100 uppercase tracking-wider mb-6 flex items-center gap-2">
+                <Users size={18} className="text-indigo-400" /> Course Faculty
+              </h3>
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-14 h-14 rounded-2xl glass flex items-center justify-center text-indigo-400 font-black text-lg bg-indigo-500/10 border border-indigo-500/20">
+                  {selectedCourse.faculty_name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2) || 'FA'}
+                </div>
+                <div>
+                  <p className="text-sm font-black text-white">{selectedCourse.faculty_name || 'Dr. Alan Turing'}</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Professor of Computing</p>
+                  <p className="text-[10px] text-indigo-400 font-medium mt-1">{selectedCourse.schedule || 'Regular Lectures'}</p>
+                </div>
+              </div>
+              <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl text-[11px] text-slate-300 leading-relaxed">
+                Lectures, quizzes, and assignments for this course are directly tied to your academic transcript and automated certificate issuance.
+              </div>
+            </GlassCard>
 
-             <GlassCard className="p-8 rounded-[2.5rem]" hover={false}>
-               <h3 className="font-bold text-slate-100 mb-6 flex items-center gap-2"><BarChart2 size={18} className="text-indigo-400"/> Cohort Metrics</h3>
-               <div className="space-y-5">
-                 <div className="flex justify-between items-center text-[10px] font-bold uppercase text-slate-400 tracking-widest">
-                   <span>Attendance</span>
-                   <span className="text-slate-100">92%</span>
-                 </div>
-                 <div className="flex justify-between items-center text-[10px] font-bold uppercase text-slate-400 tracking-widest">
-                   <span>Avg Grade</span>
-                   <span className="text-slate-100">8.4 CGPA</span>
-                 </div>
-                 <div className="flex justify-between items-center text-[10px] font-bold uppercase text-slate-400 tracking-widest">
-                   <span>Activity</span>
-                   <span className="text-slate-100">High</span>
-                 </div>
-               </div>
-             </GlassCard>
+            <GlassCard className="p-8 rounded-[2.5rem]" hover={false}>
+              <h3 className="font-bold text-sm text-slate-100 uppercase tracking-wider mb-5 flex items-center gap-2">
+                <Award size={18} className="text-amber-400" /> Certification Requirements
+              </h3>
+              <ul className="space-y-3 text-xs text-slate-300 font-medium">
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                  <span>Attendance: <strong>≥ 75%</strong></span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                  <span>Assessment Score: <strong>≥ 50%</strong></span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                  <span>Course Progress: <strong>100%</strong> (All 4 Videos)</span>
+                </li>
+              </ul>
+            </GlassCard>
           </div>
         </div>
       </div>
     );
   }
 
+  // Main Course Catalog & My Courses View
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
+    <div className="space-y-8 animate-in fade-in duration-700 font-sans pb-12">
+      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 px-1">
         <div>
-          <div className="flex items-center gap-2 text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mb-1">
-            <BookOpen size={12} className="text-indigo-400" />
-            Curriculum Architecture
+          <div className="flex items-center gap-2 text-indigo-400 text-[10px] font-black uppercase tracking-[0.2em] mb-1">
+            <BookOpen size={14} />
+            Academic Curricula &amp; Video Streams
           </div>
-          <h1 className="text-2xl font-black text-slate-100 tracking-tight">
+          <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight">
             {role === UserRole.STUDENT 
               ? (activeTab === 'catalog' ? 'Course Catalog & Self-Enrollment' : 'My Enrolled Courses')
-              : 'Active Courses'}
+              : 'Institutional Courses'}
           </h1>
+          <p className="text-xs text-slate-400 font-medium mt-1">
+            Official semester curricula featuring complete video lectures, quizzes, and certification streams.
+          </p>
         </div>
 
         {/* Student View Switcher */}
         {role === UserRole.STUDENT && (
-          <div className="flex bg-white/5 p-1 rounded-2xl border border-white/5">
+          <div className="flex bg-white/5 p-1.5 rounded-2xl border border-white/10">
             <button
               onClick={() => { setActiveTab('my_courses'); setFeedback(null); }}
-              className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition ${
+              className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
                 activeTab === 'my_courses' ? 'glass-btn-primary text-white shadow-md' : 'text-slate-400 hover:text-white'
               }`}
             >
@@ -290,27 +317,26 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
             </button>
             <button
               onClick={() => { setActiveTab('catalog'); setFeedback(null); }}
-              className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition ${
+              className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
                 activeTab === 'catalog' ? 'glass-btn-primary text-white shadow-md' : 'text-slate-400 hover:text-white'
               }`}
             >
-              Explore Catalog
+              Course Catalog
             </button>
           </div>
         )}
 
         <div className="flex items-center gap-2 p-1.5 glass rounded-2xl w-full md:w-auto">
           <div className="relative flex-1 md:w-64">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
             <input 
               type="text" 
-              placeholder="Search courses..." 
+              placeholder="Search course titles or codes..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder:text-slate-600 outline-none focus:border-indigo-500/50 transition-all"
             />
           </div>
-          <div className="w-[1px] h-6 bg-white/10 mx-1"></div>
           <div className="flex bg-white/5 rounded-xl p-1">
             <button onClick={() => setViewType('grid')} className={`p-2 rounded-lg transition-all ${viewType === 'grid' ? 'glass-btn-primary text-white' : 'text-slate-400 hover:text-slate-200'}`}><LayoutGrid size={18}/></button>
             <button onClick={() => setViewType('list')} className={`p-2 rounded-lg transition-all ${viewType === 'list' ? 'glass-btn-primary text-white' : 'text-slate-400 hover:text-slate-200'}`}><List size={18}/></button>
@@ -329,121 +355,81 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
         </div>
       )}
 
-      {/* Empty state for students with no enrollments */}
-      {role === UserRole.STUDENT && activeTab === 'my_courses' && filteredCourses.length === 0 ? (
-        <GlassCard className="p-12 rounded-[2.5rem] text-center space-y-4 max-w-lg mx-auto" hover={false}>
-          <div className="w-16 h-16 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-400 mx-auto">
-            <GraduationCap size={32} />
-          </div>
-          <h3 className="text-lg font-black text-white">No Enrolled Courses Found</h3>
-          <p className="text-xs text-slate-400 font-medium leading-relaxed">
-            You are not currently enrolled in any institutional modules. Explore the course catalog to self-enroll in your semester subjects.
-          </p>
-          <button
-            onClick={() => setActiveTab('catalog')}
-            className="glass-btn-primary px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-wider text-white inline-flex items-center gap-2"
-          >
-            <Sparkles size={14} /> Browse Course Catalog
-          </button>
-        </GlassCard>
-      ) : (
-        <div className={viewType === 'grid' ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" : "space-y-4"}>
-          {filteredCourses.map((c: any) => {
-            const isEnrolling = enrollingId === c.id;
+      {/* Course Cards */}
+      <div className={viewType === 'grid' ? "grid grid-cols-1 md:grid-cols-2 gap-8" : "space-y-4"}>
+        {filteredCourses.map((c: any) => {
+          const videoRef = COURSE_VIDEOS_DATA[c.id] || (c.code?.includes('201') ? COURSE_VIDEOS_DATA['course-cs201'] : COURSE_VIDEOS_DATA['course-cs101']);
+          const isEnrolled = activeTab === 'my_courses' || c.is_enrolled;
+          const isEnrolling = enrollingId === c.id;
 
-            return (
-              <GlassCard key={c.id || c.code} onClick={() => setSelectedCourse(c)} className={viewType === 'grid' ? 'p-8 rounded-[2.5rem] flex flex-col justify-between' : 'p-5 rounded-2xl'}>
-                <div className={viewType === 'list' ? 'flex items-center gap-8' : ''}>
-                  <div className={`shrink-0 flex items-center justify-center font-black text-[11px] ${viewType === 'grid' ? 'w-12 h-12 rounded-xl bg-indigo-500/15 text-indigo-400 mb-8' : 'w-10 h-10 rounded-lg bg-indigo-500/15 text-indigo-400'}`}>
-                    {c.code?.slice(-2) || 'XX'}
+          return (
+            <GlassCard key={c.id || c.code} className="p-8 rounded-[2.5rem] flex flex-col justify-between group">
+              <div>
+                {/* Header Badge */}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest bg-indigo-500/10 border border-indigo-500/30 px-3 py-1 rounded-lg">
+                      {c.code}
+                    </span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white/5 border border-white/10 px-3 py-1 rounded-lg">
+                      {videoRef.semesterLabel || 'Semester Core'}
+                    </span>
                   </div>
-                  
-                  <div className="flex-1 overflow-hidden">
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="flex-1 overflow-hidden">
-                        <h3 className="text-sm font-bold text-slate-200 group-hover:text-indigo-400 transition-colors truncate">{c.name || 'Untitled Course'}</h3>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5 truncate">{c.code} • {c.category || 'Academic'}</p>
-                      </div>
-                      {viewType === 'grid' && (
-                         <div className="text-right shrink-0">
-                           <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Credits</p>
-                           <p className="text-xs font-black text-slate-200">{c.credits || 0}</p>
-                         </div>
-                      )}
-                    </div>
-
-                    {viewType === 'grid' && (
-                      <div className="flex flex-wrap gap-1.5 my-6 h-[40px] overflow-hidden">
-                        {(c.code === 'CS8701' ? ['AWS', 'Docker', 'Kubernetes'] : c.code === 'CS8702' ? ['Network Security', 'Cryptography'] : ['Core Engineering', 'System Design']).map((skill: string) => (
-                          <span key={skill} className="px-2 py-0.5 glass text-slate-400 text-[8px] font-black uppercase rounded">{skill}</span>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center text-[10px] font-bold uppercase text-slate-400">
-                        <span>Course Velocity</span>
-                        <span className="text-indigo-400">{c.progress || 0}%</span>
-                      </div>
-                      <div className="h-1 bg-white/[0.06] rounded-full overflow-hidden"><div className="h-full bg-indigo-500 transition-all duration-1000 progress-glow" style={{width: `${c.progress || 0}%`, color: '#818cf8'}}></div></div>
-                    </div>
-                  </div>
-
-                  {viewType === 'list' && (
-                     <div className="flex items-center gap-10 shrink-0">
-                       <div className="text-center min-w-[60px]">
-                         <p className="text-[9px] font-black text-slate-500 uppercase">Credits</p>
-                         <p className="text-xs font-black text-slate-200">{c.credits || 0}</p>
-                       </div>
-                       <div className="p-3 rounded-xl glass text-slate-400"><ArrowRight size={16}/></div>
-                     </div>
-                  )}
-
-                  {viewType === 'grid' && (
-                     <div className="mt-8 pt-5 border-t border-white/[0.06] space-y-3">
-                       <div className="flex justify-between items-center">
-                         <div className="flex items-center gap-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                           <Clock size={12} className="text-indigo-400" />
-                           {c.schedule || 'Institutional Stream'}
-                         </div>
-                         <div className="w-8 h-8 rounded-full glass flex items-center justify-center text-slate-400 group-hover:text-indigo-400 transition-colors"><ArrowRight size={14}/></div>
-                       </div>
-
-                       {/* Action Buttons inside Course Card */}
-                       {role === UserRole.STUDENT && activeTab === 'catalog' && (
-                         <div className="pt-2" onClick={e => e.stopPropagation()}>
-                           <button
-                             type="button"
-                             onClick={() => handleSelfEnroll(c)}
-                             disabled={isEnrolling}
-                             className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-2"
-                           >
-                             {isEnrolling ? <Loader2 size={14} className="animate-spin" /> : <GraduationCap size={14} />}
-                             {isEnrolling ? 'Enrolling...' : 'Enroll In Course'}
-                           </button>
-                         </div>
-                       )}
-
-                       {role === UserRole.STUDENT && activeTab === 'my_courses' && (
-                         <div className="pt-2" onClick={e => e.stopPropagation()}>
-                           <button
-                             type="button"
-                             onClick={() => handleEnterClassroom(c)}
-                             className="w-full py-2 bg-emerald-600/80 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-2"
-                           >
-                             <GraduationCap size={14} /> Continue Learning
-                           </button>
-                         </div>
-                       )}
-                     </div>
-                  )}
+                  <span className="text-xs font-bold text-slate-400">{c.credits || 4} Credits</span>
                 </div>
-              </GlassCard>
-            );
-          })}
-        </div>
-      )}
+
+                <h3 className="text-xl font-bold text-white group-hover:text-indigo-400 transition-colors">
+                  {c.name}
+                </h3>
+                <p className="text-xs text-slate-400 font-medium mt-2 line-clamp-2 leading-relaxed">
+                  {c.description || videoRef.description}
+                </p>
+
+                {/* Skills Badges */}
+                <div className="flex flex-wrap gap-2 my-5">
+                  {(videoRef.skills || ['Computer Science']).map((s: string) => (
+                    <span key={s} className="px-2.5 py-1 glass text-slate-300 text-[9px] font-black uppercase tracking-wider rounded-md">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+
+                {/* Video Lessons Summary */}
+                <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl mb-6 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-indigo-500/10 rounded-xl text-indigo-400">
+                      <PlayCircle size={18} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-200">{videoRef.modules?.[0]?.lessons?.length || 4} Video Lectures</p>
+                      <p className="text-[10px] text-slate-400 font-medium">Cloudinary 1080P Streams</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Instructor: {c.faculty_name}</span>
+                </div>
+              </div>
+
+              {/* Card Actions */}
+              <div className="flex items-center gap-3 pt-4 border-t border-white/[0.06]">
+                <button
+                  onClick={() => handleLaunchVideoPlayer(c, 0)}
+                  className="flex-1 glass-btn-primary text-white py-3.5 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-md shadow-indigo-500/20 active:scale-95 transition-all"
+                >
+                  <PlayCircle size={16} /> Watch Lectures
+                </button>
+                <button
+                  onClick={() => setSelectedCourse(c)}
+                  className="px-5 py-3.5 glass hover:bg-white/10 text-slate-300 hover:text-white rounded-xl font-bold text-xs uppercase tracking-wider transition-all"
+                >
+                  Curriculum
+                </button>
+              </div>
+            </GlassCard>
+          );
+        })}
+      </div>
     </div>
   );
 };
+
 export default SubjectsModule;

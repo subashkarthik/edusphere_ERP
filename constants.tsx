@@ -83,16 +83,7 @@ export const NAVIGATION_ITEMS: NavItem[] = [
     category: 'core' 
   },
 
-  // 2. Course Videos & Journey (Hero Learning Experience)
-  { 
-    id: 'journey', 
-    label: 'Course Videos', 
-    icon: 'PlayCircle', 
-    roles: [UserRole.STUDENT, UserRole.FACULTY, UserRole.ADMIN], 
-    category: 'core' 
-  },
-
-  // 3. Courses & Catalog
+  // 2. Courses (Contains Video Lessons & Full Curriculum)
   { 
     id: 'academics', 
     label: 'Courses', 
