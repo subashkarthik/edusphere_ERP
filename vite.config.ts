@@ -24,6 +24,32 @@ export default defineConfig(({ mode }) => {
         alias: {
           '@': path.resolve(__dirname, '.'),
         }
+      },
+      build: {
+        target: 'esnext',
+        minify: 'esbuild',
+        cssCodeSplit: true,
+        chunkSizeWarningLimit: 600,
+        rollupOptions: {
+          output: {
+            manualChunks(id) {
+              if (id.includes('node_modules')) {
+                if (id.includes('react/') || id.includes('react-dom/')) {
+                  return 'vendor-react';
+                }
+                if (id.includes('lucide-react')) {
+                  return 'vendor-icons';
+                }
+                if (id.includes('recharts')) {
+                  return 'vendor-recharts';
+                }
+                if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('canvas-confetti')) {
+                  return 'vendor-export';
+                }
+              }
+            }
+          }
+        }
       }
     };
 });

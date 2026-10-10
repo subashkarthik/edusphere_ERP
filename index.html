@@ -11,11 +11,13 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="EduSphere LMS">
+    <meta name="apple-mobile-web-app-title" content="EduSphere">
     <link rel="manifest" href="/manifest.json">
-    <link rel="apple-touch-icon" href="/EduSphere_Logo.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <meta property="og:title" content="EduSphere — Universal University LMS System">
-    <meta property="og:description" content="The ultimate student-centric institutional experience.">
+    <meta property="og:description" content="The ultimate student-centric institutional experience with offline resilience.">
     <meta property="og:type" content="website">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -190,6 +192,19 @@
         document.documentElement.style.setProperty('--mouse-x', x + '%');
         document.documentElement.style.setProperty('--mouse-y', y + '%');
     });
+
+    // PWA Service Worker Registration
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js')
+                .then((registration) => {
+                    console.log('[PWA] Service Worker registered successfully with scope:', registration.scope);
+                })
+                .catch((error) => {
+                    console.warn('[PWA] Service Worker registration failed:', error);
+                });
+        });
+    }
 </script>
 </body>
 </html>

@@ -8,6 +8,7 @@ import { UserProfile, UserRole } from '../types';
 import GlobalSearch from './GlobalSearch';
 import { useSocket } from '../hooks/useSocket';
 import { notificationsApi, AppNotification } from '../services/api';
+import InstallPWAButton from './InstallPWAButton';
 
 interface HeaderProps {
   user: UserProfile;
@@ -184,6 +185,9 @@ const Header: React.FC<HeaderProps> = ({ user, onOpenMenu }) => {
       {/* User Actions */}
       <div className="flex items-center gap-2 md:gap-4">
         
+        {/* PWA Install Button */}
+        <InstallPWAButton />
+
         {/* Role Badge Indicator */}
         <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest hidden sm:inline-block ${
           user.role === UserRole.ADMIN ? 'bg-rose-500/20 border border-rose-500/30 text-rose-300' :

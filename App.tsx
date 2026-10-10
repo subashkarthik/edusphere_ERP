@@ -11,22 +11,23 @@ import { ROLE_THEMES } from './constants';
 import { authApi, setTokens, clearTokens, getAccessToken } from './services/api';
 import { useSocket } from './hooks/useSocket';
 import { LiveNotificationToast } from './components/LiveNotificationToast';
+import OfflineBanner from './components/OfflineBanner';
 
-// Core 5 Pillars + Dashboard Views
-import Dashboard from './views/Dashboard';
-import AttendanceModule from './views/AttendanceModule';
-import SubjectsModule from './views/SubjectsModule';
-import FacultyCMS from './views/FacultyCMS';
-import ExamsModule from './views/ExamsModule';
-import AssignmentModule from './views/AssignmentModule';
-import CertificationsModule from './views/CertificationsModule';
-import UsersModule from './views/UsersModule';
-import SettingsModule from './views/SettingsModule';
-import LearningJourney from './views/LearningJourney';
-import LearningWorkspace from './views/LearningWorkspace';
-import PublicCatalog from './views/PublicCatalog';
-import CertificateVerification from './views/CertificateVerification';
-import { Login } from './components/Login';
+// Lazy-loaded Core 5 Pillars + Views for Maximum Network Performance & Chunk Splitting
+const Dashboard = React.lazy(() => import('./views/Dashboard'));
+const AttendanceModule = React.lazy(() => import('./views/AttendanceModule'));
+const SubjectsModule = React.lazy(() => import('./views/SubjectsModule'));
+const FacultyCMS = React.lazy(() => import('./views/FacultyCMS'));
+const ExamsModule = React.lazy(() => import('./views/ExamsModule'));
+const AssignmentModule = React.lazy(() => import('./views/AssignmentModule'));
+const CertificationsModule = React.lazy(() => import('./views/CertificationsModule'));
+const UsersModule = React.lazy(() => import('./views/UsersModule'));
+const SettingsModule = React.lazy(() => import('./views/SettingsModule'));
+const LearningJourney = React.lazy(() => import('./views/LearningJourney'));
+const LearningWorkspace = React.lazy(() => import('./views/LearningWorkspace'));
+const PublicCatalog = React.lazy(() => import('./views/PublicCatalog'));
+const CertificateVerification = React.lazy(() => import('./views/CertificateVerification'));
+const Login = React.lazy(() => import('./components/Login').then(module => ({ default: module.Login })));
 
 const App: React.FC = () => {
   const [showSplash, setShowSplash] = useState(true);
@@ -164,47 +165,67 @@ const App: React.FC = () => {
   if (showSplash) return <SplashScreen />;
 
   if (window.location.pathname.startsWith('/verify-certificate') || window.location.pathname.startsWith('/verify')) {
-    return <CertificateVerification />;
+    return (
+      <div className="min-h-screen flex flex-col">
+        <OfflineBanner />
+        <Suspense fallback={<FullPageLoader />}>
+          <CertificateVerification />
+        </Suspense>
+      </div>
+    );
   }
   if (window.location.pathname.startsWith('/public-catalog')) {
-    return <PublicCatalog />;
+    return (
+      <div className="min-h-screen flex flex-col">
+        <OfflineBanner />
+        <Suspense fallback={<FullPageLoader />}>
+          <PublicCatalog />
+        </Suspense>
+      </div>
+    );
   }
 
   if (!isLoggedIn) {
     return (
-      <Login
-        onLoginSuccess={(backendUser, tokens) => {
-          setTokens(tokens.access_token, tokens.refresh_token);
-          const mappedRole = (backendUser.role as keyof typeof UserRole) in UserRole 
-            ? UserRole[backendUser.role as keyof typeof UserRole] 
-            : UserRole.STUDENT;
+      <div className="min-h-screen flex flex-col">
+        <OfflineBanner />
+        <Suspense fallback={<FullPageLoader />}>
+          <Login
+            onLoginSuccess={(backendUser, tokens) => {
+              setTokens(tokens.access_token, tokens.refresh_token);
+              const mappedRole = (backendUser.role as keyof typeof UserRole) in UserRole 
+                ? UserRole[backendUser.role as keyof typeof UserRole] 
+                : UserRole.STUDENT;
 
-          setUser({
-            id: backendUser.id,
-            name: backendUser.name,
-            email: backendUser.email,
-            role: mappedRole,
-            department: backendUser.department || undefined,
-            avatar: backendUser.avatar || `https://ui-avatars.com/api/?name=${backendUser.name.replace(' ', '+')}&background=1e3a8a&color=fff`,
-            enrollmentNo: backendUser.enrollment_no || undefined,
-            designation: backendUser.designation || undefined,
-            phone: backendUser.phone || undefined,
-            org_id: backendUser.org_id,
-          });
-          setCurrentRole(mappedRole);
-          setIsLoggedIn(true);
-          setActiveTab('dashboard');
-          window.dispatchEvent(new CustomEvent('institution-data-sync'));
-        }}
-      />
+              setUser({
+                id: backendUser.id,
+                name: backendUser.name,
+                email: backendUser.email,
+                role: mappedRole,
+                department: backendUser.department || undefined,
+                avatar: backendUser.avatar || `https://ui-avatars.com/api/?name=${backendUser.name.replace(' ', '+')}&background=1e3a8a&color=fff`,
+                enrollmentNo: backendUser.enrollment_no || undefined,
+                designation: backendUser.designation || undefined,
+                phone: backendUser.phone || undefined,
+                org_id: backendUser.org_id,
+              });
+              setCurrentRole(mappedRole);
+              setIsLoggedIn(true);
+              setActiveTab('dashboard');
+              window.dispatchEvent(new CustomEvent('institution-data-sync'));
+            }}
+          />
+        </Suspense>
+      </div>
     );
   }
 
   const theme = ROLE_THEMES[currentRole];
 
   return (
-    <div className="min-h-screen flex overflow-x-hidden selection:bg-indigo-500/30 relative z-10">
-      <div className="flex w-full animate-in fade-in duration-1000">
+    <div className="min-h-screen flex flex-col overflow-x-hidden selection:bg-indigo-500/30 relative z-10">
+      <OfflineBanner />
+      <div className="flex w-full animate-in fade-in duration-1000 flex-1">
         <Sidebar 
           currentRole={currentRole} 
           activeTab={activeTab} 

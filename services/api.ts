@@ -66,10 +66,21 @@ export async function apiFetch<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers,
+    });
+  } catch (netErr: any) {
+    // Network failure (offline, airplane mode, DNS fail, server down)
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+    const msg = isOffline 
+      ? 'You are currently offline. Please check your internet connection and try again.'
+      : 'Unable to reach the server. Please check your network connection.';
+    console.warn(`[API Network Error] ${endpoint}:`, netErr);
+    throw new Error(msg);
+  }
 
   // Handle 401 - attempt token refresh or redirect to login
   if (response.status === 401) {
@@ -86,6 +97,11 @@ export async function apiFetch<T>(
     }
     const error = await response.json().catch(() => ({ detail: 'Unauthorized' }));
     throw new Error(error.detail || 'HTTP 401');
+  }
+
+  if (response.status === 503) {
+    const data = await response.json().catch(() => ({ detail: 'Service temporarily unavailable or offline.' }));
+    throw new Error(data.detail || 'You are currently offline.');
   }
 
   if (!response.ok) {
