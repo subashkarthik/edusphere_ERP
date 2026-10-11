@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Enum as SAEnum, Text, Float
+from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Enum as SAEnum, Text, Float, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import Base
 
@@ -20,14 +20,18 @@ class TimetableEntryType(str, enum.Enum):
 
 class Course(Base):
     __tablename__ = "courses"
+    __table_args__ = (
+        UniqueConstraint('org_id', 'code', name='uq_courses_org_code'),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
     code: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     credits: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
-    department_id: Mapped[str] = mapped_column(String(36), ForeignKey("departments.id"), nullable=False)
-    faculty_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    department_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("departments.id"), nullable=True)
+    faculty_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True, index=True)
     semester: Mapped[int] = mapped_column(Integer, default=7)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     schedule: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -41,7 +45,6 @@ class Course(Base):
     approved_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
     review_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-
     # Relationships
     organization = relationship("Organization", back_populates="courses")
     department = relationship("Department", back_populates="courses")
@@ -54,27 +57,33 @@ class Course(Base):
     modules = relationship("Module", back_populates="course", cascade="all, delete-orphan")
     assignments = relationship("Assignment", back_populates="course", cascade="all, delete-orphan")
     discussions = relationship("Discussion", back_populates="course", cascade="all, delete-orphan")
+    certificate_policy = relationship("CertificatePolicy", back_populates="course", uselist=False, cascade="all, delete-orphan")
 
     def __repr__(self):
-        return f"<Course {self.code}: {self.name}>"
+        return f"<Course {self.code}: {self.title or self.name}>"
 
 
 class Enrollment(Base):
     __tablename__ = "enrollments"
+    __table_args__ = (
+        UniqueConstraint('student_id', 'course_id', name='uq_enrollments_student_course'),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False)
-    student_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
-    course_id: Mapped[str] = mapped_column(String(36), ForeignKey("courses.id"), nullable=False)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    student_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    course_id: Mapped[str] = mapped_column(String(36), ForeignKey("courses.id"), nullable=False, index=True)
     semester_label: Mapped[str] = mapped_column(String(20), default="Semester 7")
     grade: Mapped[str | None] = mapped_column(String(5), nullable=True)
     gpa_points: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[EnrollmentStatus] = mapped_column(SAEnum(EnrollmentStatus), default=EnrollmentStatus.ACTIVE)
+    enrolled_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
     enrolled_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships
     student = relationship("User", back_populates="enrollments", foreign_keys=[student_id])
     course = relationship("Course", back_populates="enrollments")
+    enroller = relationship("User", foreign_keys=[enrolled_by])
     exam_results = relationship("ExamResult", back_populates="enrollment")
 
     def __repr__(self):
@@ -85,8 +94,8 @@ class TimetableEntry(Base):
     __tablename__ = "timetable_entries"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False)
-    course_id: Mapped[str] = mapped_column(String(36), ForeignKey("courses.id"), nullable=False)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    course_id: Mapped[str] = mapped_column(String(36), ForeignKey("courses.id"), nullable=False, index=True)
     faculty_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
     day_of_week: Mapped[str] = mapped_column(String(10), nullable=False)
     start_time: Mapped[str] = mapped_column(String(10), nullable=False)
@@ -107,8 +116,8 @@ class CourseMaterial(Base):
     __tablename__ = "course_materials"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False)
-    course_id: Mapped[str] = mapped_column(String(36), ForeignKey("courses.id"), nullable=False)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    course_id: Mapped[str] = mapped_column(String(36), ForeignKey("courses.id"), nullable=False, index=True)
     uploaded_by_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     file_type: Mapped[str] = mapped_column(String(10), default="PDF")

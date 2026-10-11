@@ -11,16 +11,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from config import settings
 from database import Base
-import models.user
-import models.academic
-import models.organization
-import models.content
-import models.exam
-import models.attendance
-import models.finance
-import models.misc
-import models.placement
-import models.intelligence
+import models  # Imports all models and registers them with Base.metadata
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

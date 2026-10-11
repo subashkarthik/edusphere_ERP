@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import String, Integer, Float, Boolean, DateTime, ForeignKey, Text, JSON, Enum as SAEnum
+from sqlalchemy import String, Integer, Float, Boolean, DateTime, ForeignKey, Text, JSON, Enum as SAEnum, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import Base
 
@@ -21,8 +21,8 @@ class Module(Base):
     __tablename__ = "modules"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False)
-    course_id: Mapped[str] = mapped_column(String(36), ForeignKey("courses.id"), nullable=False)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    course_id: Mapped[str] = mapped_column(String(36), ForeignKey("courses.id"), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     order_index: Mapped[int] = mapped_column(Integer, default=0)
@@ -36,8 +36,8 @@ class Lesson(Base):
     __tablename__ = "lessons"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False)
-    module_id: Mapped[str] = mapped_column(String(36), ForeignKey("modules.id"), nullable=False)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    module_id: Mapped[str] = mapped_column(String(36), ForeignKey("modules.id"), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[ContentType] = mapped_column(SAEnum(ContentType), nullable=False)
     content_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -53,8 +53,8 @@ class Assignment(Base):
     __tablename__ = "assignments"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False)
-    course_id: Mapped[str] = mapped_column(String(36), ForeignKey("courses.id"), nullable=False)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    course_id: Mapped[str] = mapped_column(String(36), ForeignKey("courses.id"), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     due_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
@@ -68,11 +68,14 @@ class Assignment(Base):
 
 class Submission(Base):
     __tablename__ = "submissions"
+    __table_args__ = (
+        UniqueConstraint('assignment_id', 'student_id', name='uq_submissions_assignment_student'),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False)
-    assignment_id: Mapped[str] = mapped_column(String(36), ForeignKey("assignments.id"), nullable=False)
-    student_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    assignment_id: Mapped[str] = mapped_column(String(36), ForeignKey("assignments.id"), nullable=False, index=True)
+    student_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
     file_url: Mapped[str] = mapped_column(String(500), nullable=False)
     submitted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     marks_obtained: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -89,9 +92,9 @@ class Discussion(Base):
     __tablename__ = "discussions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False)
-    course_id: Mapped[str] = mapped_column(String(36), ForeignKey("courses.id"), nullable=False)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    course_id: Mapped[str] = mapped_column(String(36), ForeignKey("courses.id"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
     parent_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("discussions.id"), nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     upvotes: Mapped[int] = mapped_column(Integer, default=0)
@@ -102,23 +105,26 @@ class Discussion(Base):
     course = relationship("Course", back_populates="discussions")
     user = relationship("User")
     replies = relationship("Discussion", cascade="all, delete-orphan")
-    # Using backref in older style or just separate relationship for parent
-    # For now, let's just make it simple to avoid circular mapper issues
 
 
 class LessonProgress(Base):
     __tablename__ = "lesson_progress"
+    __table_args__ = (
+        UniqueConstraint('user_id', 'lesson_id', name='uq_lesson_progress_user_lesson'),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
-    lesson_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=False, index=True, default="org-edusphere")
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    lesson_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     completed: Mapped[bool] = mapped_column(Boolean, default=True)
     completed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    org_id: Mapped[str] = mapped_column(String(36), nullable=False, default="org-edusphere")
 
     user = relationship("User", foreign_keys=[user_id])
 
+    @property
+    def student_id(self):
+        return self.user_id
+
     def __repr__(self):
         return f"<LessonProgress {self.user_id}:{self.lesson_id}>"
-
-
