@@ -3,67 +3,14 @@ import { UserRole } from '../types';
 import { 
   ArrowLeft, ArrowRight, BookOpen, CheckCircle2, Clock, 
   PlayCircle, Sparkles, GraduationCap, CheckCircle, Search, 
-  LayoutGrid, List, AlertCircle, Users, Award, Play
+  LayoutGrid, List, AlertCircle, Users, Award, Play, RotateCcw
 } from 'lucide-react';
 import { useApi } from '../hooks';
-import { coursesApi, videosApi } from '../services/api';
+import { coursesApi } from '../services/api';
 import { FullPageLoader } from '../components/LoadingSkeleton';
 import GlassCard from '../components/GlassCard';
 
 interface ModuleProps { id: string; role: UserRole; }
-
-const COURSE_VIDEOS_DATA: Record<string, any> = {
-  'course-cs101': {
-    id: 'course-cs101',
-    code: 'CS101',
-    semesterLabel: 'Semester 1',
-    name: 'C Programming Masterclass',
-    category: 'Computer Science',
-    credits: 4,
-    faculty_name: 'Dr. Alan Turing',
-    schedule: 'Mon, Wed 10:00 AM',
-    description: 'Comprehensive hands-on course in C programming fundamentals, memory pointers, input/output operations, and type conversions.',
-    skills: ['C Fundamentals', 'Pointers & Memory', 'Type Conversion', 'System IO'],
-    modules: [
-      {
-        id: 'c-mod-1',
-        title: 'C Programming Fundamentals',
-        lessons: [
-          { id: 'c-l1', title: '1. Getting Started with C Programming', duration: '12:45', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711172/vidssave.com_1__Getting_Started_with_C_Programming_2025___C_Programming_for_Beginners_1080P_p4zh7l.mp4' },
-          { id: 'c-l2', title: '2. C Variables and Print Output', duration: '15:30', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711662/vidssave.com_2__C_Variables_and_Print_Output___2025_C_Programming_for_Beginners_1080P_zvbax2.mp4' },
-          { id: 'c-l3', title: '3. Get User Input in C Programming', duration: '10:15', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711316/vidssave.com_4__Get_User_Input_in_C_Programming_1080P_k3ca6n.mp4' },
-          { id: 'c-l4', title: '4. Type Conversion in C (Implicit & Explicit)', duration: '14:20', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711479/vidssave.com_7__Type_Conversion_in_C___Implicit_and_Explicit_Type_Conversion_1080P_d9tobz.mp4' }
-        ]
-      }
-    ]
-  },
-  'course-cs201': {
-    id: 'course-cs201',
-    code: 'CS201',
-    semesterLabel: 'Semester 2',
-    name: 'Java Programming & OOP Architecture',
-    category: 'Computer Science',
-    credits: 4,
-    faculty_name: 'Dr. Ada Lovelace',
-    schedule: 'Tue, Thu 02:00 PM',
-    description: 'Core Java, Object-Oriented Programming (OOP) design patterns, JVM internals, bytecode execution, and variable data types.',
-    skills: ['Java Core', 'JVM & Bytecode', 'OOP Patterns', 'Data Types'],
-    modules: [
-      {
-        id: 'java-mod-1',
-        title: 'Java Core & Object Oriented Programming',
-        lessons: [
-          { id: 'java-l1', title: '1. Java Development Kit (JDK) Setup', duration: '08:50', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711546/vidssave.com_2_Java_Development_Kit_JDK_Setup_1080P_lzfrg0.mp4' },
-          { id: 'java-l2', title: '2. First Code in Java', duration: '11:10', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711745/vidssave.com_3_First_Code_in_Java_1080P_u6v7fr.mp4' },
-          { id: 'java-l3', title: '3. How Java Works (JVM, JRE & Bytecode)', duration: '13:40', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711883/vidssave.com_4_How_Java_Works_1080P_eril9s.mp4' },
-          { id: 'java-l4', title: '4. Variables & Data Types in Java', duration: '16:05', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785712079/vidssave.com_5_Variables_in_Java_1080P_ugfhwt.mp4' }
-        ]
-      }
-    ]
-  }
-};
-
-const DEFAULT_COURSES_LIST = Object.values(COURSE_VIDEOS_DATA);
 
 const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
   const [selectedCourse, setSelectedCourse] = useState<any | null>(null);
@@ -77,30 +24,25 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
   const [enrolledStudents, setEnrolledStudents] = useState<any[]>([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
 
-  // Fetch courses from backend or fallback to the two hero courses
+  // Fetch courses from backend
   const fetcher = role === UserRole.STUDENT 
     ? (activeTab === 'catalog' ? () => coursesApi.list(true) : () => coursesApi.myEnrollments())
     : () => coursesApi.list();
 
-  const { data: rawCourses, loading, refetch } = useApi(fetcher, DEFAULT_COURSES_LIST, [role, activeTab], `subjects-${role}-${activeTab}`);
+  const { data: rawCourses, loading, error, refetch } = useApi(fetcher, [], [role, activeTab], `subjects-${role}-${activeTab}`);
 
-  // Merge backend courses with video lessons
-  const courses = (rawCourses && rawCourses.length > 0 ? rawCourses : DEFAULT_COURSES_LIST).map((c: any) => {
-    const videoRef = COURSE_VIDEOS_DATA[c.id] || (c.code?.includes('201') ? COURSE_VIDEOS_DATA['course-cs201'] : COURSE_VIDEOS_DATA['course-cs101']);
-    return {
-      ...videoRef,
-      ...c,
-      modules: videoRef?.modules || c.modules || [],
-      skills: videoRef?.skills || ['Software Engineering', 'Algorithms']
-    };
-  });
+  const courses = (rawCourses || []).map((c: any) => ({
+    ...c,
+    modules: c.modules || [],
+    syllabus_topics: c.syllabus_topics || []
+  }));
 
   // If faculty/admin selects a course, load enrolled students
   useEffect(() => {
     if (selectedCourse && (role === UserRole.FACULTY || role === UserRole.ADMIN)) {
       setLoadingStudents(true);
       coursesApi.getEnrolledStudents(selectedCourse.id)
-        .then(res => setEnrolledStudents(res.students || []))
+        .then(res => setEnrolledStudents(res?.students || []))
         .catch(err => {
           console.warn('Failed to load course students:', err);
           setEnrolledStudents([]);
@@ -125,7 +67,6 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
   };
 
   const handleLaunchVideoPlayer = (course: any, lessonIndex: number = 0) => {
-    const videoRef = COURSE_VIDEOS_DATA[course.id] || (course.code?.includes('201') ? COURSE_VIDEOS_DATA['course-cs201'] : COURSE_VIDEOS_DATA['course-cs101']);
     window.dispatchEvent(new CustomEvent('universe-navigate', { 
       detail: { 
         tab: 'workspace', 
@@ -133,7 +74,7 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
           id: course.id,
           title: `${course.name} - Video Lecture Series`,
           activeLessonIndex: lessonIndex,
-          modules: videoRef.modules
+          modules: course.modules || []
         }
       } 
     }));
@@ -144,12 +85,27 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
     c.code?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  if (loading && !courses) return <FullPageLoader />;
+  if (loading && !rawCourses) return <FullPageLoader />;
 
-  // Detailed Course View with Video Lessons Stream
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 glass rounded-3xl text-center space-y-4 my-8">
+        <AlertCircle size={48} className="text-rose-400" />
+        <h3 className="text-lg font-bold text-white">Failed to load courses</h3>
+        <p className="text-xs text-slate-400 max-w-md">{error}</p>
+        <button
+          onClick={refetch}
+          className="px-6 py-2.5 glass-btn-primary rounded-xl text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2"
+        >
+          <RotateCcw size={14} /> Retry
+        </button>
+      </div>
+    );
+  }
+
+  // Detailed Course View with Lessons Stream & Scoped Intel
   if (selectedCourse) {
-    const videoRef = COURSE_VIDEOS_DATA[selectedCourse.id] || (selectedCourse.code?.includes('201') ? COURSE_VIDEOS_DATA['course-cs201'] : COURSE_VIDEOS_DATA['course-cs101']);
-    const lessonsList = videoRef.modules?.[0]?.lessons || [];
+    const lessonsList = selectedCourse.modules?.flatMap((m: any) => m.lessons || []) || [];
 
     return (
       <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500 font-sans pb-12">
@@ -166,25 +122,38 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest bg-indigo-500/10 border border-indigo-500/30 px-2.5 py-1 rounded-lg">
-                    {selectedCourse.code} • {videoRef.semesterLabel || 'Semester Core'}
+                    {selectedCourse.code} • {selectedCourse.semester ? `Semester ${selectedCourse.semester}` : 'Core Curriculum'}
                   </span>
                   <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-lg">
-                    {selectedCourse.credits || 4} Credits
+                    {selectedCourse.credits || 3} Credits
                   </span>
                 </div>
                 <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight">{selectedCourse.name}</h1>
                 <p className="text-xs text-slate-400 font-medium mt-1 max-w-2xl leading-relaxed">
-                  {selectedCourse.description || videoRef.description}
+                  {selectedCourse.description || 'No description provided.'}
                 </p>
+
+                {/* Free-form Syllabus Topics entered by faculty */}
+                {selectedCourse.syllabus_topics && selectedCourse.syllabus_topics.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-4">
+                    {selectedCourse.syllabus_topics.map((topic: string) => (
+                      <span key={topic} className="px-3 py-1 glass text-indigo-300 text-[10px] font-black uppercase tracking-wider rounded-lg border border-indigo-500/20">
+                        {topic}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
-            <button 
-              onClick={() => handleLaunchVideoPlayer(selectedCourse, 0)}
-              className="glass-btn-primary text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center gap-3 shadow-lg shadow-indigo-500/20 active:scale-95 transition-all w-full lg:w-auto justify-center"
-            >
-              <PlayCircle size={18} /> Watch Video Lectures
-            </button>
+            {lessonsList.length > 0 && (
+              <button 
+                onClick={() => handleLaunchVideoPlayer(selectedCourse, 0)}
+                className="glass-btn-primary text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center gap-3 shadow-lg shadow-indigo-500/20 active:scale-95 transition-all w-full lg:w-auto justify-center"
+              >
+                <PlayCircle size={18} /> Open Lessons
+              </button>
+            )}
           </div>
         </GlassCard>
 
@@ -196,50 +165,135 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
               <div className="flex items-center justify-between mb-6 border-b border-white/[0.06] pb-4">
                 <div>
                   <h3 className="font-bold text-lg text-slate-100 flex items-center gap-2.5">
-                    <PlayCircle className="text-indigo-400" size={22} /> Structured Video Lessons ({lessonsList.length} Lectures)
+                    <PlayCircle className="text-indigo-400" size={22} /> Course Lessons ({lessonsList.length})
                   </h3>
                   <p className="text-[11px] text-slate-400 mt-1">
-                    Watch all video lessons to complete 100% course progress for certificate eligibility.
+                    Structured modules and curriculum materials.
                   </p>
                 </div>
-                <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest bg-emerald-500/10 px-3 py-1 rounded-lg border border-emerald-500/20">
-                  Cloud Stream Ready
-                </span>
+                {lessonsList.length > 0 && (
+                  <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest bg-emerald-500/10 px-3 py-1 rounded-lg border border-emerald-500/20">
+                    Published
+                  </span>
+                )}
               </div>
 
-              <div className="space-y-3.5">
-                {lessonsList.map((lesson: any, idx: number) => (
-                  <div 
-                    key={lesson.id || idx}
-                    onClick={() => handleLaunchVideoPlayer(selectedCourse, idx)}
-                    className="p-5 rounded-2xl glass border border-white/[0.06] hover:border-indigo-500/30 hover:bg-indigo-500/[0.04] transition-all flex items-center gap-4 group cursor-pointer"
-                  >
-                    <div className="w-12 h-12 rounded-2xl bg-indigo-500/15 border border-indigo-500/20 flex items-center justify-center text-indigo-400 group-hover:scale-110 group-hover:bg-indigo-500 group-hover:text-white transition-all shrink-0">
-                      <Play size={18} fill="currentColor" />
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-sm font-bold text-slate-200 group-hover:text-white transition-colors truncate">
-                        {lesson.title}
-                      </h4>
-                      <div className="flex items-center gap-3 mt-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                        <span className="flex items-center gap-1"><Clock size={11} /> {lesson.duration}</span>
-                        <span>•</span>
-                        <span className="text-indigo-400">High Definition 1080P</span>
+              {lessonsList.length === 0 ? (
+                <div className="text-center py-12 text-slate-400 font-bold text-xs">
+                  No lessons published yet
+                </div>
+              ) : (
+                <div className="space-y-3.5">
+                  {lessonsList.map((lesson: any, idx: number) => (
+                    <div 
+                      key={lesson.id || idx}
+                      onClick={() => handleLaunchVideoPlayer(selectedCourse, idx)}
+                      className="p-5 rounded-2xl glass border border-white/[0.06] hover:border-indigo-500/30 hover:bg-indigo-500/[0.04] transition-all flex items-center gap-4 group cursor-pointer"
+                    >
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-500/15 border border-indigo-500/20 flex items-center justify-center text-indigo-400 group-hover:scale-110 group-hover:bg-indigo-500 group-hover:text-white transition-all shrink-0">
+                        <Play size={18} fill="currentColor" />
                       </div>
-                    </div>
 
-                    <button className="px-4 py-2 glass rounded-xl text-[10px] font-black uppercase tracking-widest text-indigo-300 group-hover:bg-indigo-600 group-hover:text-white transition-all shrink-0">
-                      Play
-                    </button>
-                  </div>
-                ))}
-              </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-bold text-slate-200 group-hover:text-white transition-colors truncate">
+                          {lesson.title}
+                        </h4>
+                        <div className="flex items-center gap-3 mt-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          <span className="flex items-center gap-1"><Clock size={11} /> {lesson.duration || `${lesson.duration_minutes || 0} min`}</span>
+                          <span className="text-indigo-400">Type: {lesson.content_type || lesson.type || 'Lesson'}</span>
+                        </div>
+                      </div>
+
+                      <button className="px-4 py-2 glass rounded-xl text-[10px] font-black uppercase tracking-widest text-indigo-300 group-hover:bg-indigo-600 group-hover:text-white transition-all shrink-0">
+                        View
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </GlassCard>
+
+            {/* Enrolled Students Roster (Faculty/Admin only) */}
+            {(role === UserRole.FACULTY || role === UserRole.ADMIN) && (
+              <GlassCard className="p-8 rounded-[2.5rem]" hover={false}>
+                <div className="flex items-center justify-between mb-6 border-b border-white/[0.06] pb-4">
+                  <div>
+                    <h3 className="font-bold text-lg text-slate-100 flex items-center gap-2.5">
+                      <Users className="text-emerald-400" size={22} /> Enrolled Students ({enrolledStudents.length})
+                    </h3>
+                    <p className="text-[11px] text-slate-400 mt-1">Active enrollments for {selectedCourse.code}</p>
+                  </div>
+                </div>
+
+                {loadingStudents ? (
+                  <div className="text-center py-8 text-slate-400 text-xs">Loading roster...</div>
+                ) : enrolledStudents.length === 0 ? (
+                  <div className="text-center py-8 text-slate-500 text-xs">No students currently enrolled.</div>
+                ) : (
+                  <div className="space-y-3">
+                    {enrolledStudents.map((st: any) => (
+                      <div key={st.id || st.student_id} className="p-4 rounded-xl bg-white/[0.02] border border-white/5 flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-bold text-white">{st.name}</p>
+                          <p className="text-[10px] text-slate-400 font-mono">{st.enrollment_no || st.email}</p>
+                        </div>
+                        <span className="text-[10px] font-bold px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase">
+                          {st.status || 'Active'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </GlassCard>
+            )}
           </div>
 
-          {/* Right Sidebar: Faculty & Course Intel */}
+          {/* Right Sidebar */}
           <div className="space-y-6">
+            {/* Student Performance for THIS Course Only */}
+            {role === UserRole.STUDENT && (
+              <GlassCard className="p-8 rounded-[2.5rem]" hover={false}>
+                <h3 className="font-bold text-sm text-slate-100 uppercase tracking-wider mb-5 flex items-center gap-2">
+                  <Award size={18} className="text-indigo-400" /> My Course Performance
+                </h3>
+                <div className="space-y-3.5">
+                  <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">My Attendance</p>
+                      <p className="text-[11px] text-slate-500 font-medium">This course only</p>
+                    </div>
+                    <span className="text-base font-black text-white">
+                      {selectedCourse.my_attendance !== null && selectedCourse.my_attendance !== undefined 
+                        ? `${selectedCourse.my_attendance}%` 
+                        : 'No classes held yet'}
+                    </span>
+                  </div>
+
+                  <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">My Marks</p>
+                      <p className="text-[11px] text-slate-500 font-medium">Graded assessments</p>
+                    </div>
+                    <span className="text-base font-black text-white">
+                      {selectedCourse.my_marks !== null && selectedCourse.my_marks !== undefined 
+                        ? `${selectedCourse.my_marks}%` 
+                        : 'No assessments graded yet'}
+                    </span>
+                  </div>
+
+                  <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Course Progress</p>
+                      <p className="text-[11px] text-slate-500 font-medium">Completed lessons</p>
+                    </div>
+                    <span className="text-base font-black text-indigo-400">
+                      {selectedCourse.progress ?? 0}%
+                    </span>
+                  </div>
+                </div>
+              </GlassCard>
+            )}
+
             <GlassCard className="p-8 rounded-[2.5rem]" hover={false}>
               <h3 className="font-bold text-sm text-slate-100 uppercase tracking-wider mb-6 flex items-center gap-2">
                 <Users size={18} className="text-indigo-400" /> Course Faculty
@@ -249,34 +303,11 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
                   {selectedCourse.faculty_name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2) || 'FA'}
                 </div>
                 <div>
-                  <p className="text-sm font-black text-white">{selectedCourse.faculty_name || 'Dr. Alan Turing'}</p>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Professor of Computing</p>
-                  <p className="text-[10px] text-indigo-400 font-medium mt-1">{selectedCourse.schedule || 'Regular Lectures'}</p>
+                  <p className="text-sm font-black text-white">{selectedCourse.faculty_name || 'Assigned Faculty'}</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Faculty In-Charge</p>
+                  <p className="text-[10px] text-indigo-400 font-medium mt-1">{selectedCourse.schedule || 'Scheduled Sessions'}</p>
                 </div>
               </div>
-              <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl text-[11px] text-slate-300 leading-relaxed">
-                Lectures, quizzes, and assignments for this course are directly tied to your academic transcript and automated certificate issuance.
-              </div>
-            </GlassCard>
-
-            <GlassCard className="p-8 rounded-[2.5rem]" hover={false}>
-              <h3 className="font-bold text-sm text-slate-100 uppercase tracking-wider mb-5 flex items-center gap-2">
-                <Award size={18} className="text-amber-400" /> Certification Requirements
-              </h3>
-              <ul className="space-y-3 text-xs text-slate-300 font-medium">
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
-                  <span>Attendance: <strong>≥ 75%</strong></span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
-                  <span>Assessment Score: <strong>≥ 50%</strong></span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
-                  <span>Course Progress: <strong>100%</strong> (All 4 Videos)</span>
-                </li>
-              </ul>
             </GlassCard>
           </div>
         </div>
@@ -292,7 +323,7 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
         <div>
           <div className="flex items-center gap-2 text-indigo-400 text-[10px] font-black uppercase tracking-[0.2em] mb-1">
             <BookOpen size={14} />
-            Academic Curricula &amp; Video Streams
+            Academic Curricula &amp; Courses
           </div>
           <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight">
             {role === UserRole.STUDENT 
@@ -300,7 +331,7 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
               : 'Institutional Courses'}
           </h1>
           <p className="text-xs text-slate-400 font-medium mt-1">
-            Official semester curricula featuring complete video lectures, quizzes, and certification streams.
+            Official institutional courses with curriculum modules, lessons, and performance metrics.
           </p>
         </div>
 
@@ -355,79 +386,122 @@ const SubjectsModule: React.FC<ModuleProps> = ({ role }) => {
         </div>
       )}
 
-      {/* Course Cards */}
-      <div className={viewType === 'grid' ? "grid grid-cols-1 md:grid-cols-2 gap-8" : "space-y-4"}>
-        {filteredCourses.map((c: any) => {
-          const videoRef = COURSE_VIDEOS_DATA[c.id] || (c.code?.includes('201') ? COURSE_VIDEOS_DATA['course-cs201'] : COURSE_VIDEOS_DATA['course-cs101']);
-          const isEnrolled = activeTab === 'my_courses' || c.is_enrolled;
-          const isEnrolling = enrollingId === c.id;
+      {/* Courses List or Empty State */}
+      {filteredCourses.length === 0 ? (
+        <div className="flex flex-col items-center justify-center p-16 glass rounded-3xl text-center space-y-3 my-6">
+          <BookOpen size={48} className="text-slate-600 mb-2" />
+          <h3 className="text-base font-bold text-white">No Courses Found</h3>
+          <p className="text-xs text-slate-400 max-w-sm">
+            {role === UserRole.STUDENT && activeTab === 'my_courses'
+              ? "You haven't enrolled in any courses yet. Switch to the Course Catalog to browse and enroll."
+              : "No courses are currently available in the database. When courses are registered, they will appear here."}
+          </p>
+        </div>
+      ) : (
+        <div className={viewType === 'grid' ? "grid grid-cols-1 md:grid-cols-2 gap-8" : "space-y-4"}>
+          {filteredCourses.map((c: any) => {
+            const isEnrolled = activeTab === 'my_courses' || c.is_enrolled;
+            const isEnrolling = enrollingId === c.id;
 
-          return (
-            <GlassCard key={c.id || c.code} className="p-8 rounded-[2.5rem] flex flex-col justify-between group">
-              <div>
-                {/* Header Badge */}
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest bg-indigo-500/10 border border-indigo-500/30 px-3 py-1 rounded-lg">
-                      {c.code}
-                    </span>
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white/5 border border-white/10 px-3 py-1 rounded-lg">
-                      {videoRef.semesterLabel || 'Semester Core'}
-                    </span>
-                  </div>
-                  <span className="text-xs font-bold text-slate-400">{c.credits || 4} Credits</span>
-                </div>
-
-                <h3 className="text-xl font-bold text-white group-hover:text-indigo-400 transition-colors">
-                  {c.name}
-                </h3>
-                <p className="text-xs text-slate-400 font-medium mt-2 line-clamp-2 leading-relaxed">
-                  {c.description || videoRef.description}
-                </p>
-
-                {/* Skills Badges */}
-                <div className="flex flex-wrap gap-2 my-5">
-                  {(videoRef.skills || ['Computer Science']).map((s: string) => (
-                    <span key={s} className="px-2.5 py-1 glass text-slate-300 text-[9px] font-black uppercase tracking-wider rounded-md">
-                      {s}
-                    </span>
-                  ))}
-                </div>
-
-                {/* Video Lessons Summary */}
-                <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl mb-6 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-indigo-500/10 rounded-xl text-indigo-400">
-                      <PlayCircle size={18} />
+            return (
+              <GlassCard key={c.id || c.code} className="p-8 rounded-[2.5rem] flex flex-col justify-between group">
+                <div>
+                  {/* Header Badge */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest bg-indigo-500/10 border border-indigo-500/30 px-3 py-1 rounded-lg">
+                        {c.code}
+                      </span>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white/5 border border-white/10 px-3 py-1 rounded-lg">
+                        {c.semester ? `Semester ${c.semester}` : 'Core Course'}
+                      </span>
                     </div>
-                    <div>
-                      <p className="text-xs font-bold text-slate-200">{videoRef.modules?.[0]?.lessons?.length || 4} Video Lectures</p>
-                      <p className="text-[10px] text-slate-400 font-medium">Cloudinary 1080P Streams</p>
-                    </div>
+                    <span className="text-xs font-bold text-slate-400">{c.credits || 4} Credits</span>
                   </div>
-                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Instructor: {c.faculty_name}</span>
-                </div>
-              </div>
 
-              {/* Card Actions */}
-              <div className="flex items-center gap-3 pt-4 border-t border-white/[0.06]">
-                <button
-                  onClick={() => handleLaunchVideoPlayer(c, 0)}
-                  className="flex-1 glass-btn-primary text-white py-3.5 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-md shadow-indigo-500/20 active:scale-95 transition-all"
-                >
-                  <PlayCircle size={16} /> Watch Lectures
-                </button>
-                <button
-                  onClick={() => setSelectedCourse(c)}
-                  className="px-5 py-3.5 glass hover:bg-white/10 text-slate-300 hover:text-white rounded-xl font-bold text-xs uppercase tracking-wider transition-all"
-                >
-                  Curriculum
-                </button>
-              </div>
-            </GlassCard>
-          );
-        })}
-      </div>
+                  <h3 className="text-xl font-bold text-white group-hover:text-indigo-400 transition-colors">
+                    {c.name}
+                  </h3>
+                  <p className="text-xs text-slate-400 font-medium mt-2 line-clamp-2 leading-relaxed">
+                    {c.description || 'No description provided.'}
+                  </p>
+
+                  {/* Syllabus Topics Badges (rendered ONLY if faculty added them) */}
+                  {c.syllabus_topics && c.syllabus_topics.length > 0 && (
+                    <div className="flex flex-wrap gap-2 my-5">
+                      {c.syllabus_topics.map((s: string) => (
+                        <span key={s} className="px-2.5 py-1 glass text-indigo-300 text-[9px] font-black uppercase tracking-wider rounded-md border border-indigo-500/20">
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Real Lessons Summary */}
+                  {(() => {
+                    const courseLessons = c.modules?.flatMap((m: any) => m.lessons || []) || [];
+                    const totalLessons = c.lessons_count ?? courseLessons.length;
+                    const typeSummary = c.lesson_types && c.lesson_types.length > 0 
+                      ? c.lesson_types.map((t: string) => t.toUpperCase()).join(', ') 
+                      : (courseLessons.length > 0 ? Array.from(new Set(courseLessons.map((l: any) => (l.content_type || l.type || 'Lesson').toUpperCase()))).join(', ') : null);
+
+                    return (
+                      <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl mb-6 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-indigo-500/10 rounded-xl text-indigo-400">
+                            <PlayCircle size={18} />
+                          </div>
+                          <div>
+                            {totalLessons === 0 ? (
+                              <p className="text-xs font-bold text-slate-400">No lessons published yet</p>
+                            ) : (
+                              <>
+                                <p className="text-xs font-bold text-slate-200">
+                                  {totalLessons} {totalLessons === 1 ? 'Lesson' : 'Lessons'} {typeSummary ? `(${typeSummary})` : ''}
+                                </p>
+                                <p className="text-[10px] text-slate-400 font-medium">{c.modules?.length || 0} Modules</p>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
+                          Faculty: {c.faculty_name || 'Assigned'}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Card Actions */}
+                <div className="flex items-center gap-3 pt-4 border-t border-white/[0.06]">
+                  {role === UserRole.STUDENT && activeTab === 'catalog' && !isEnrolled ? (
+                    <button
+                      onClick={() => handleSelfEnroll(c)}
+                      disabled={isEnrolling}
+                      className="flex-1 glass-btn-primary text-white py-3.5 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-md shadow-indigo-500/20 active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      {isEnrolling ? 'Enrolling...' : 'Enroll in Course'}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleLaunchVideoPlayer(c, 0)}
+                      className="flex-1 glass-btn-primary text-white py-3.5 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-md shadow-indigo-500/20 active:scale-95 transition-all"
+                    >
+                      <PlayCircle size={16} /> Open Course
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setSelectedCourse(c)}
+                    className="px-5 py-3.5 glass hover:bg-white/10 text-slate-300 hover:text-white rounded-xl font-bold text-xs uppercase tracking-wider transition-all"
+                  >
+                    Curriculum
+                  </button>
+                </div>
+              </GlassCard>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

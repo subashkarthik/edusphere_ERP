@@ -1,3 +1,4 @@
+import math
 from datetime import datetime, date, timezone
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -36,7 +37,18 @@ def get_student_dashboard(
     - Average assessment score
     - Upcoming / pending quizzes and assignments
     - Earned / eligible certificates
+    - At-risk warning when any course attendance < policy minimum + recovery formula
     """
+    from services.metrics import (
+        attendance_for,
+        attendance_overall,
+        assessment_for,
+        progress_for,
+        certificate_eligibility,
+    )
+
+    org_id = getattr(current_user, "org_id", "org-edusphere") or "org-edusphere"
+
     enrollments = db.query(Enrollment).filter(
         Enrollment.student_id == current_user.id,
         Enrollment.status.in_([EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED])
@@ -44,10 +56,8 @@ def get_student_dashboard(
 
     enrolled_course_ids = [e.course_id for e in enrollments]
 
-    # Calculate per-course details and aggregate numbers
     courses_data = []
-    total_sessions_all = 0
-    total_present_all = 0
+    at_risk_courses = []
     all_assessment_scores = []
     certificates_earned_count = 0
 
@@ -57,35 +67,57 @@ def get_student_dashboard(
             continue
 
         faculty = db.query(User).filter(User.id == course.faculty_id).first() if course.faculty_id else None
-        
-        # Real metrics calculation
-        attn_pct, assess_pct, prog_pct = calculate_student_metrics(db, current_user.id, course.id)
-        
-        # Count actual attendance sessions & logs
-        sessions = db.query(AttendanceSession).filter(AttendanceSession.course_id == course.id).all()
-        sess_ids = [s.id for s in sessions]
-        if sess_ids:
-            logs = db.query(AttendanceLog).filter(
-                AttendanceLog.student_id == current_user.id,
-                AttendanceLog.session_id.in_(sess_ids)
-            ).all()
-            present_cnt = sum(1 for l in logs if l.status == AttendanceStatus.PRESENT)
-            total_sessions_all += max(len(sessions), len(logs))
-            total_present_all += present_cnt
 
-        if assess_pct > 0:
-            all_assessment_scores.append(assess_pct)
+        c_attn = attendance_for(db, org_id, current_user.id, course.id)
+        c_assess = assessment_for(db, org_id, current_user.id, course.id)
+        c_prog = progress_for(db, org_id, current_user.id, course.id)
+        c_cert = certificate_eligibility(db, org_id, current_user.id, course.id)
 
-        # Check certificate
+        if c_assess["pct"] is not None:
+            all_assessment_scores.append(c_assess["pct"])
+
         cert = db.query(Certificate).filter(
             Certificate.user_id == current_user.id,
             Certificate.course_id == course.id
         ).first()
 
-        cert_status = cert.eligibility_status.value if cert else "INELIGIBLE"
-        cert_code = cert.certificate_code if (cert and cert.eligibility_status == CertificateStatus.ISSUED) else None
-        if cert and cert.eligibility_status == CertificateStatus.ISSUED:
+        is_issued = bool(cert and cert.eligibility_status == CertificateStatus.ISSUED)
+        if is_issued:
             certificates_earned_count += 1
+
+        cert_status = cert.eligibility_status.value if cert else ("ELIGIBLE" if c_cert["eligible"] else "INELIGIBLE")
+        cert_code = cert.certificate_code if is_issued else None
+
+        policy_min = 75.0
+        if "policy" in c_cert and isinstance(c_cert["policy"], dict):
+            policy_min = c_cert["policy"].get("min_attendance_pct", 75.0)
+
+        held = c_attn.get("held", 0)
+        attended = c_attn.get("attended", 0)
+        current_pct = c_attn.get("pct")
+
+        is_at_risk = False
+        classes_needed = 0
+        formula_str = ""
+
+        if held > 0 and current_pct is not None and current_pct < policy_min:
+            is_at_risk = True
+            classes_needed = math.ceil((policy_min * held - 100 * attended) / (100 - policy_min))
+            classes_needed = max(classes_needed, 1)
+            formula_str = f"⌈({policy_min}% × {held} held - 100 × {attended} attended) / (100 - {policy_min}%)⌉ = {classes_needed} consecutive classes needed to reach {policy_min}%"
+
+            at_risk_courses.append({
+                "course_id": course.id,
+                "course_code": course.code,
+                "course_name": course.name,
+                "faculty_name": faculty.name if faculty else "Unassigned",
+                "current_pct": current_pct,
+                "policy_min_pct": policy_min,
+                "classes_attended": attended,
+                "classes_held": held,
+                "classes_needed_to_recover": classes_needed,
+                "formula_explanation": formula_str,
+            })
 
         courses_data.append({
             "id": course.id,
@@ -93,16 +125,23 @@ def get_student_dashboard(
             "name": course.name,
             "credits": course.credits,
             "faculty_name": faculty.name if faculty else "Unassigned",
-            "attendance_pct": attn_pct,
-            "assessment_pct": assess_pct,
-            "progress_pct": prog_pct,
+            "attendance_pct": c_attn["pct"],
+            "attended": attended,
+            "held": held,
+            "assessment_pct": c_assess["pct"],
+            "progress_pct": c_prog["pct"],
             "certificate_status": cert_status,
             "certificate_code": cert_code,
-            "certificate_url": cert.certificate_url if (cert and cert.eligibility_status == CertificateStatus.ISSUED) else None,
+            "certificate_url": cert.certificate_url if is_issued else None,
+            "is_at_risk": is_at_risk,
+            "policy_min_pct": policy_min,
+            "classes_needed_to_recover": classes_needed,
+            "formula_explanation": formula_str,
         })
 
-    overall_attendance_pct = round((total_present_all / total_sessions_all) * 100.0, 1) if total_sessions_all > 0 else 0.0
-    overall_assessment_avg = round(sum(all_assessment_scores) / len(all_assessment_scores), 1) if all_assessment_scores else 0.0
+    overall_att = attendance_overall(db, org_id, current_user.id)
+    overall_attendance_pct = overall_att["pct"]
+    overall_assessment_avg = round(sum(all_assessment_scores) / len(all_assessment_scores), 1) if all_assessment_scores else None
 
     # Upcoming / Unattempted Quizzes
     upcoming_quizzes = []
@@ -112,7 +151,6 @@ def get_student_dashboard(
             Quiz.is_active == True
         ).all()
         for q in quizzes:
-            # Check if student attempted
             attempt = db.query(QuizAttempt).filter(
                 QuizAttempt.quiz_id == q.id,
                 QuizAttempt.student_id == current_user.id
@@ -177,6 +215,7 @@ def get_student_dashboard(
         "average_assessment_score": overall_assessment_avg,
         "certificates_earned_count": len(earned_certs_data),
         "courses": courses_data,
+        "at_risk_courses": at_risk_courses,
         "upcoming_quizzes": upcoming_quizzes,
         "upcoming_assignments": upcoming_assignments,
         "earned_certificates": earned_certs_data
@@ -196,8 +235,14 @@ def get_faculty_dashboard(
     - Courses taught by this faculty (or org courses if admin)
     - Total students enrolled across courses
     - Submissions pending evaluation / grading
-    - Attendance sessions held today and overall attendance rate
+    - Attendance sessions held today with "Mark Attendance" shortcut
+    - Students below 75% attendance list with recovery formula
+    - Class average per assessment (quizzes and assignments)
     """
+    from services.metrics import attendance_for
+
+    org_id = getattr(current_user, "org_id", "org-edusphere") or "org-edusphere"
+
     if current_user.role == UserRole.ADMIN:
         courses = db.query(Course).filter(Course.org_id == current_user.org_id, Course.is_active == True).all()
     else:
@@ -251,6 +296,19 @@ def get_faculty_dashboard(
     ).all() if course_ids else []
 
     today_sessions_count = len(today_sessions)
+    today_sessions_data = []
+    for ts in today_sessions:
+        c = db.query(Course).filter(Course.id == ts.course_id).first()
+        today_sessions_data.append({
+            "id": ts.id,
+            "course_id": ts.course_id,
+            "course_code": c.code if c else "",
+            "course_name": c.name if c else "Course",
+            "period": ts.period or "General Period",
+            "topic": ts.topic or "Course Lecture",
+            "status": ts.status.value,
+            "session_date": str(ts.session_date),
+        })
 
     # Calculate overall attendance rate across faculty's courses
     total_logs = 0
@@ -265,13 +323,19 @@ def get_faculty_dashboard(
 
     overall_attendance_pct = round((present_logs / total_logs) * 100.0, 1) if total_logs > 0 else 0.0
 
-    # Course breakdown
+    # Students Below 75% Attendance (At Risk across this faculty's courses)
+    students_below_75 = []
+    seen_student_course = set()
+
+    # Course breakdown + Class Average per Assessment
     courses_data = []
+    all_class_averages = []
+
     for c in courses:
         c_enrs = [e for e in enrollments if e.course_id == c.id]
         c_pending = sum(1 for s in pending_submissions if s.assignment and s.assignment.course_id == c.id)
-        
-        # attendance for this course
+
+        # Attendance for this course
         c_sessions = db.query(AttendanceSession).filter(AttendanceSession.course_id == c.id).all()
         c_sids = [s.id for s in c_sessions]
         c_att_pct = 0.0
@@ -281,6 +345,83 @@ def get_faculty_dashboard(
                 c_pres = sum(1 for l in c_logs if l.status == AttendanceStatus.PRESENT)
                 c_att_pct = round((c_pres / len(c_logs)) * 100.0, 1)
 
+        # Assessments and class average
+        c_assessments = []
+
+        # 1. Quizzes
+        quizzes = db.query(Quiz).filter(Quiz.course_id == c.id).all()
+        for q in quizzes:
+            q_attempts = db.query(QuizAttempt).filter(QuizAttempt.quiz_id == q.id).all()
+            avg_quiz_pct = round(sum(att.percentage for att in q_attempts) / len(q_attempts), 1) if q_attempts else None
+            item = {
+                "id": q.id,
+                "type": "QUIZ",
+                "title": q.title,
+                "course_code": c.code,
+                "course_name": c.name,
+                "average_pct": avg_quiz_pct,
+                "submissions_count": len(q_attempts),
+                "total_marks": q.total_marks
+            }
+            c_assessments.append(item)
+            all_class_averages.append(item)
+
+        # 2. Assignments
+        assignments = db.query(Assignment).filter(Assignment.course_id == c.id).all()
+        for a in assignments:
+            graded_subs = db.query(Submission).filter(
+                Submission.assignment_id == a.id,
+                Submission.marks_obtained.isnot(None)
+            ).all()
+            avg_asg_pct = round(
+                sum((sub.marks_obtained / a.max_marks * 100.0) for sub in graded_subs) / len(graded_subs), 1
+            ) if (graded_subs and a.max_marks > 0) else None
+            item = {
+                "id": a.id,
+                "type": "ASSIGNMENT",
+                "title": a.title,
+                "course_code": c.code,
+                "course_name": c.name,
+                "average_pct": avg_asg_pct,
+                "submissions_count": len(graded_subs),
+                "total_marks": a.max_marks
+            }
+            c_assessments.append(item)
+            all_class_averages.append(item)
+
+        # Calculate students below 75% for this course
+        for enr in c_enrs:
+            key = (enr.student_id, c.id)
+            if key in seen_student_course:
+                continue
+            seen_student_course.add(key)
+
+            st = enr.student or db.query(User).filter(User.id == enr.student_id).first()
+            if not st:
+                continue
+
+            st_attn = attendance_for(db, org_id, st.id, c.id)
+            if st_attn["pct"] is not None and st_attn["pct"] < 75.0 and st_attn["held"] > 0:
+                held = st_attn["held"]
+                attended = st_attn["attended"]
+                classes_needed = math.ceil((75.0 * held - 100.0 * attended) / 25.0)
+                classes_needed = max(classes_needed, 1)
+
+                students_below_75.append({
+                    "student_id": st.id,
+                    "student_name": st.name,
+                    "student_email": st.email,
+                    "enrollment_no": st.enrollment_no or f"ED-{st.id[:6].upper()}",
+                    "course_id": c.id,
+                    "course_code": c.code,
+                    "course_name": c.name,
+                    "attendance_pct": st_attn["pct"],
+                    "classes_attended": attended,
+                    "classes_held": held,
+                    "classes_needed_to_recover": classes_needed,
+                    "formula": f"⌈(75% × {held} - 100 × {attended}) / 25%⌉ = {classes_needed} classes"
+                })
+
         courses_data.append({
             "id": c.id,
             "code": c.code,
@@ -289,7 +430,8 @@ def get_faculty_dashboard(
             "enrolled_students_count": len(c_enrs),
             "pending_grading_count": c_pending,
             "attendance_pct": c_att_pct,
-            "sessions_count": len(c_sessions)
+            "sessions_count": len(c_sessions),
+            "assessment_averages": c_assessments
         })
 
     return {
@@ -297,8 +439,11 @@ def get_faculty_dashboard(
         "total_students_count": unique_students_count,
         "pending_grading_count": pending_grading_count,
         "today_sessions_count": today_sessions_count,
+        "today_sessions": today_sessions_data,
         "overall_attendance_pct": overall_attendance_pct,
         "courses": courses_data,
+        "students_below_75": students_below_75,
+        "class_averages_per_assessment": all_class_averages,
         "pending_submissions": pending_submissions_data
     }
 
@@ -313,68 +458,145 @@ def get_admin_dashboard(
 ):
     """
     Real data dashboard for administrators:
-    - User counts breakdown by role (students, faculty, admins)
-    - Active courses count and department breakdown
-    - Total active enrollments
+    - Counts of students, faculty, courses, enrollments
+    - Attendance rate by department
+    - Courses without assigned faculty
+    - Students without active enrollments
     - Certificates issued / revoked
-    - System-wide attendance rate
-    - Real assessment & submission metrics
-    - Recent system audit logs
+    - Recent system audit events
     """
-    # Users breakdown
-    total_users = db.query(User).filter(User.org_id == current_user.org_id).count()
-    total_students = db.query(User).filter(User.org_id == current_user.org_id, User.role == UserRole.STUDENT).count()
-    total_faculty = db.query(User).filter(User.org_id == current_user.org_id, User.role == UserRole.FACULTY).count()
-    total_admins = db.query(User).filter(User.org_id == current_user.org_id, User.role == UserRole.ADMIN).count()
+    org_id = current_user.org_id
 
-    # Courses & Departments
-    total_courses = db.query(Course).filter(Course.org_id == current_user.org_id, Course.is_active == True).count()
-    total_departments = db.query(Department).filter(Department.org_id == current_user.org_id).count()
-
-    # Enrollments
+    # 1. Counts
+    total_users = db.query(User).filter(User.org_id == org_id).count()
+    total_students = db.query(User).filter(User.org_id == org_id, User.role == UserRole.STUDENT, User.is_active == True).count()
+    total_faculty = db.query(User).filter(User.org_id == org_id, User.role == UserRole.FACULTY, User.is_active == True).count()
+    total_admins = db.query(User).filter(User.org_id == org_id, User.role == UserRole.ADMIN, User.is_active == True).count()
+    total_courses = db.query(Course).filter(Course.org_id == org_id, Course.is_active == True).count()
     total_enrollments = db.query(Enrollment).filter(
-        Enrollment.org_id == current_user.org_id,
+        Enrollment.org_id == org_id,
         Enrollment.status == EnrollmentStatus.ACTIVE
     ).count()
 
-    # Certificates
+    # 2. Certificates
     certificates_issued = db.query(Certificate).filter(
-        Certificate.org_id == current_user.org_id,
+        Certificate.org_id == org_id,
         Certificate.eligibility_status == CertificateStatus.ISSUED
     ).count()
 
     certificates_revoked = db.query(Certificate).filter(
-        Certificate.org_id == current_user.org_id,
+        Certificate.org_id == org_id,
         Certificate.eligibility_status == CertificateStatus.REVOKED
     ).count()
 
-    certificates_ineligible = db.query(Certificate).filter(
-        Certificate.org_id == current_user.org_id,
-        Certificate.eligibility_status == CertificateStatus.INELIGIBLE
-    ).count()
+    # 3. Attendance Rate by Department
+    departments = db.query(Department).filter(Department.org_id == org_id).all()
+    attendance_by_department = []
 
-    # System-wide Attendance
-    total_sessions = db.query(AttendanceSession).filter(AttendanceSession.org_id == current_user.org_id).count()
-    total_logs = db.query(AttendanceLog).filter(AttendanceLog.org_id == current_user.org_id).count()
+    for dept in departments:
+        dept_course_ids = [c.id for c in db.query(Course.id).filter(
+            Course.department_id == dept.id,
+            Course.org_id == org_id,
+            Course.is_active == True
+        ).all()]
+
+        if dept_course_ids:
+            dept_session_ids = [s.id for s in db.query(AttendanceSession.id).filter(
+                AttendanceSession.course_id.in_(dept_course_ids),
+                AttendanceSession.org_id == org_id
+            ).all()]
+            if dept_session_ids:
+                dept_logs = db.query(AttendanceLog).filter(AttendanceLog.session_id.in_(dept_session_ids)).all()
+                total_dept_logs = len(dept_logs)
+                pres_dept_logs = sum(1 for l in dept_logs if l.status == AttendanceStatus.PRESENT)
+                dept_rate = round((pres_dept_logs / total_dept_logs) * 100.0, 1) if total_dept_logs > 0 else 0.0
+            else:
+                dept_rate = 0.0
+        else:
+            dept_rate = 0.0
+
+        dept_courses_count = len(dept_course_ids)
+        dept_student_count = db.query(User).filter(
+            User.department_id == dept.id,
+            User.role == UserRole.STUDENT,
+            User.org_id == org_id,
+            User.is_active == True
+        ).count()
+
+        attendance_by_department.append({
+            "department_id": dept.id,
+            "department_code": dept.code,
+            "department_name": dept.name,
+            "attendance_rate": dept_rate,
+            "courses_count": dept_courses_count,
+            "students_count": dept_student_count,
+        })
+
+    # 4. Courses Without Assigned Faculty
+    unassigned_courses = db.query(Course).filter(
+        Course.org_id == org_id,
+        Course.is_active == True,
+        (Course.faculty_id == None) | (Course.faculty_id == "")
+    ).all()
+
+    courses_without_faculty = []
+    for uc in unassigned_courses:
+        dept_name = uc.department.name if uc.department else "General"
+        courses_without_faculty.append({
+            "id": uc.id,
+            "code": uc.code,
+            "name": uc.name,
+            "credits": uc.credits,
+            "department_name": dept_name,
+        })
+
+    # 5. Students Without Enrollments
+    all_students = db.query(User).filter(
+        User.org_id == org_id,
+        User.role == UserRole.STUDENT,
+        User.is_active == True
+    ).all()
+
+    active_enrolled_student_ids = set(
+        e.student_id for e in db.query(Enrollment.student_id).filter(
+            Enrollment.org_id == org_id,
+            Enrollment.status == EnrollmentStatus.ACTIVE
+        ).all()
+    )
+
+    students_without_enrollments = []
+    for st in all_students:
+        if st.id not in active_enrolled_student_ids:
+            dept_name = st.department.name if st.department else "General"
+            students_without_enrollments.append({
+                "id": st.id,
+                "name": st.name,
+                "email": st.email,
+                "enrollment_no": st.enrollment_no or f"ED-{st.id[:6].upper()}",
+                "department_name": dept_name,
+            })
+
+    # 6. Overall System Attendance
+    total_sessions = db.query(AttendanceSession).filter(AttendanceSession.org_id == org_id).count()
+    total_logs = db.query(AttendanceLog).filter(AttendanceLog.org_id == org_id).count()
     present_logs = db.query(AttendanceLog).filter(
-        AttendanceLog.org_id == current_user.org_id,
+        AttendanceLog.org_id == org_id,
         AttendanceLog.status == AttendanceStatus.PRESENT
     ).count()
-
     average_attendance_rate = round((present_logs / total_logs) * 100.0, 1) if total_logs > 0 else 0.0
 
-    # Assessments summary
-    total_quizzes = db.query(Quiz).filter(Quiz.org_id == current_user.org_id).count()
-    total_quiz_attempts = db.query(QuizAttempt).filter(QuizAttempt.org_id == current_user.org_id).count()
-    total_assignments = db.query(Assignment).filter(Assignment.org_id == current_user.org_id).count()
-    total_submissions = db.query(Submission).filter(Submission.org_id == current_user.org_id).count()
+    # 7. Assessments
+    total_quizzes = db.query(Quiz).filter(Quiz.org_id == org_id).count()
+    total_quiz_attempts = db.query(QuizAttempt).filter(QuizAttempt.org_id == org_id).count()
+    total_assignments = db.query(Assignment).filter(Assignment.org_id == org_id).count()
+    total_submissions = db.query(Submission).filter(Submission.org_id == org_id).count()
 
-    # Recent Audit Logs
+    # 8. Recent Audit Events
     recent_logs = db.query(AuditLog).filter(
-        AuditLog.org_id == current_user.org_id
-    ).order_by(AuditLog.timestamp.desc()).limit(5).all()
+        AuditLog.org_id == org_id
+    ).order_by(AuditLog.timestamp.desc()).limit(10).all()
 
-    audit_logs_data = []
+    recent_audit_events = []
     now = datetime.now(timezone.utc)
     for log_item in recent_logs:
         delta = now - log_item.timestamp.replace(tzinfo=timezone.utc) if log_item.timestamp else None
@@ -389,16 +611,46 @@ def get_admin_dashboard(
             time_str = "Just now"
 
         actor = db.query(User).filter(User.id == log_item.user_id).first() if log_item.user_id else None
-        audit_logs_data.append({
+        recent_audit_events.append({
             "id": log_item.id,
             "action": log_item.action,
             "resource_type": log_item.resource_type,
             "actor_name": actor.name if actor else "System",
             "time": time_str,
-            "timestamp": log_item.timestamp.isoformat() if log_item.timestamp else ""
+            "timestamp": log_item.timestamp.isoformat() if log_item.timestamp else "",
+            "details": getattr(log_item, "details", None) or f"{log_item.action} on {log_item.entity or log_item.resource_type or 'SYSTEM'}"
         })
 
     return {
+        "counts": {
+            "students": total_students,
+            "faculty": total_faculty,
+            "courses": total_courses,
+            "enrollments": total_enrollments,
+            "total_users": total_users,
+            "admins": total_admins,
+        },
+        "attendance_by_department": attendance_by_department,
+        "courses_without_faculty": courses_without_faculty,
+        "students_without_enrollments": students_without_enrollments,
+        "certificates": {
+            "issued": certificates_issued,
+            "revoked": certificates_revoked,
+            "ineligible": 0
+        },
+        "attendance": {
+            "average_rate": average_attendance_rate,
+            "total_sessions": total_sessions,
+            "total_logs": total_logs,
+        },
+        "assessments": {
+            "total_quizzes": total_quizzes,
+            "total_quiz_attempts": total_quiz_attempts,
+            "total_assignments": total_assignments,
+            "total_submissions": total_submissions
+        },
+        "recent_audit_events": recent_audit_events,
+        "recent_audit_logs": recent_audit_events,
         "users": {
             "total": total_users,
             "students": total_students,
@@ -407,28 +659,11 @@ def get_admin_dashboard(
         },
         "courses": {
             "total": total_courses,
-            "departments": total_departments
+            "departments": len(departments)
         },
         "enrollments": {
             "total_active": total_enrollments
-        },
-        "certificates": {
-            "issued": certificates_issued,
-            "revoked": certificates_revoked,
-            "ineligible": certificates_ineligible
-        },
-        "attendance": {
-            "average_rate": average_attendance_rate,
-            "total_sessions": total_sessions,
-            "total_logs": total_logs
-        },
-        "assessments": {
-            "total_quizzes": total_quizzes,
-            "total_quiz_attempts": total_quiz_attempts,
-            "total_assignments": total_assignments,
-            "total_submissions": total_submissions
-        },
-        "recent_audit_logs": audit_logs_data
+        }
     }
 
 

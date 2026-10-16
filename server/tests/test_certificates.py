@@ -50,7 +50,7 @@ def cert_test_data():
                 org_id="org-edusphere",
                 email="student_low_attn@edusphere.edu.in",
                 password_hash=hash_password("studentpass123"),
-                name="Priya Sharma",
+                name="Test Student One",
                 role=UserRole.STUDENT,
                 enrollment_no="ED/2026/CERT01",
             )
@@ -145,9 +145,13 @@ def cert_test_data():
                 course_id=course.id,
                 title="Distributed Protocols Quiz",
                 total_marks=100,
+                is_results_published=True,
                 org_id="org-edusphere",
             )
             db.add(quiz)
+            db.commit()
+        else:
+            quiz.is_results_published = True
             db.commit()
 
         # Student A quiz attempt: 80%

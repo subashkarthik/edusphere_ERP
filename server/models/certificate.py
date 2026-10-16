@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import String, Float, DateTime, ForeignKey, Enum as SAEnum, UniqueConstraint
+from sqlalchemy import String, Float, Boolean, DateTime, ForeignKey, Enum as SAEnum, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import Base
 
@@ -32,9 +32,15 @@ class Certificate(Base):
     assessment_pct: Mapped[float] = mapped_column(Float, default=0.0)
     progress_pct: Mapped[float] = mapped_column(Float, default=0.0)
 
+    # Manual Faculty/Admin Override
+    is_override: Mapped[bool] = mapped_column(Boolean, default=False)
+    override_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    override_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+
     # Relationships
     user = relationship("User", foreign_keys=[user_id])
     course = relationship("Course", foreign_keys=[course_id])
+    overrider = relationship("User", foreign_keys=[override_by_id])
 
     # Semantic properties
     @property

@@ -1,9 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.orm import Session
 from database import get_db
 from models.user import User, UserRole
 from models.content import Assignment, Submission, AssignmentStatus
 from middleware.auth import get_current_user, require_roles
+from middleware.scoping import (
+    verify_assignment_access,
+    verify_submission_access,
+    verify_course_access,
+    verify_org_access,
+)
 from pydantic import BaseModel
 from datetime import datetime
 from typing import List, Optional
@@ -24,6 +30,7 @@ class AssignmentResponse(BaseModel):
     submission_id: Optional[str] = None
     marks_obtained: Optional[float] = None
     feedback: Optional[str] = None
+    is_results_published: Optional[bool] = False
     
     class Config:
         from_attributes = True
@@ -61,13 +68,23 @@ class SubmissionResponse(BaseModel):
 
 @router.get("/", response_model=List[AssignmentResponse])
 def get_assignments(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Get all assignments for the student or faculty/admin in the organization."""
-    from models.academic import Course, Enrollment
+    """Get assignments scoped to student enrollments, faculty courses, or admin org."""
+    from models.academic import Course, Enrollment, EnrollmentStatus
 
-    # Fetch all assignments in the organization so student sees all published coursework
-    assignments = db.query(Assignment).filter(
-        Assignment.org_id == current_user.org_id
-    ).order_by(Assignment.created_at.desc()).all()
+    query = db.query(Assignment).filter(Assignment.org_id == current_user.org_id)
+
+    if current_user.role == UserRole.STUDENT:
+        enrolled_course_ids = [
+            e.course_id for e in db.query(Enrollment.course_id).filter(
+                Enrollment.student_id == current_user.id,
+                Enrollment.status.in_([EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED])
+            ).all()
+        ]
+        query = query.filter(Assignment.course_id.in_(enrolled_course_ids))
+    elif current_user.role == UserRole.FACULTY:
+        query = query.join(Course).filter(Course.faculty_id == current_user.id)
+
+    assignments = query.order_by(Assignment.created_at.desc()).all()
         
     result = []
     for assign in assignments:
@@ -84,10 +101,17 @@ def get_assignments(db: Session = Depends(get_db), current_user: User = Depends(
         feedback_val = None
         
         if submission:
-            status_val = submission.status.value
-            sub_id = submission.id
-            marks = submission.marks_obtained
-            feedback_val = submission.feedback
+            is_published = getattr(assign, "is_results_published", False)
+            if current_user.role == UserRole.STUDENT and not is_published:
+                status_val = "SUBMITTED"
+                sub_id = submission.id
+                marks = None
+                feedback_val = None
+            else:
+                status_val = submission.status.value
+                sub_id = submission.id
+                marks = submission.marks_obtained
+                feedback_val = submission.feedback
         elif assign.due_date and assign.due_date < datetime.utcnow():
             status_val = "LATE"
             
@@ -114,11 +138,13 @@ def get_assignments(db: Session = Depends(get_db), current_user: User = Depends(
             status=status_val,
             submission_id=sub_id,
             marks_obtained=marks,
-            feedback=feedback_val
+            feedback=feedback_val,
+            is_results_published=getattr(assign, "is_results_published", False)
         ))
         
     return result
 
+@router.post("", response_model=AssignmentResponse)
 @router.post("/", response_model=AssignmentResponse)
 async def create_assignment(
     request_data: AssignmentCreateRequest,
@@ -126,51 +152,8 @@ async def create_assignment(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles([UserRole.FACULTY, UserRole.ADMIN]))
 ):
-    """Create a new assignment. Faculty/Admin only."""
-    from models.academic import Course
-    from models.user import Department
-    from models.synced_legacy import SyncedSubject
-
-    course = db.query(Course).filter(
-        (Course.id == request_data.course_id) | 
-        (Course.code == request_data.course_id) | 
-        (Course.name == request_data.course_id)
-    ).first()
-
-    if not course:
-        # Check SyncedSubject safely
-        synced = None
-        if request_data.course_id.isdigit():
-            synced = db.query(SyncedSubject).filter(SyncedSubject.id == int(request_data.course_id)).first()
-        else:
-            synced = db.query(SyncedSubject).filter(SyncedSubject.name == request_data.course_id).first()
-
-        if synced:
-            course_name = synced.name
-            course_code = f"SUB-{synced.id}"[:20]
-        elif request_data.course_id.startswith("video-"):
-            parts = request_data.course_id.split("-")
-            c_title = parts[-1].replace("_", " ").title() if len(parts) > 1 else request_data.course_id
-            cat_title = parts[1].replace("_", " ").title() if len(parts) > 2 else "Video Course"
-            course_name = f"{c_title} ({cat_title})"
-            course_code = f"VID-{parts[-1][:15].upper()}"
-        else:
-            course_name = f"Course {request_data.course_id}"
-            course_code = f"CODE-{request_data.course_id[:15]}"
-
-        dept = db.query(Department).first()
-        dept_id = dept.id if dept else "dept-cse"
-
-        course = Course(
-            id=request_data.course_id[:36],
-            code=course_code,
-            name=course_name[:255],
-            department_id=dept_id,
-            org_id=current_user.org_id
-        )
-        db.add(course)
-        db.commit()
-        db.refresh(course)
+    """Create a new assignment. Faculty/Admin only. Scoped to courses faculty teaches or admin org."""
+    course = verify_course_access(request_data.course_id, current_user, db, action="manage")
 
     try:
         due_dt = datetime.fromisoformat(request_data.due_date.replace("Z", "+00:00"))
@@ -179,7 +162,7 @@ async def create_assignment(
 
     new_assign = Assignment(
         org_id=current_user.org_id,
-        course_id=request_data.course_id,
+        course_id=course.id,
         title=request_data.title,
         description=request_data.description,
         due_date=due_dt,
@@ -224,8 +207,25 @@ async def create_assignment(
         due_date=new_assign.due_date.isoformat(),
         max_marks=new_assign.max_marks,
         file_url=new_assign.file_url,
-        status="PENDING"
+        status="PENDING",
+        is_results_published=False
     )
+
+class SingleSubmissionRequest(BaseModel):
+    file_url: str
+
+@router.post("/{assignment_id}/submit", response_model=dict)
+async def submit_assignment_by_id(
+    assignment_id: str,
+    request_data: SingleSubmissionRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Submit assignment with assignment_id in path."""
+    assignment = verify_assignment_access(assignment_id, current_user, db, action="submit")
+    req = SubmissionRequest(assignment_id=assignment.id, file_url=request_data.file_url)
+    return await submit_assignment(req, request, db, current_user)
 
 @router.post("/submit", response_model=dict)
 async def submit_assignment(
@@ -235,9 +235,7 @@ async def submit_assignment(
     current_user: User = Depends(get_current_user)
 ):
     """Submit an assignment."""
-    assignment = db.query(Assignment).filter(Assignment.id == request_data.assignment_id).first()
-    if not assignment:
-        raise HTTPException(status_code=404, detail="Assignment not found")
+    assignment = verify_assignment_access(request_data.assignment_id, current_user, db, action="submit")
         
     # Check existing submission
     existing = db.query(Submission).filter(
@@ -279,14 +277,18 @@ async def submit_assignment(
 
 @router.get("/submissions", response_model=List[SubmissionResponse])
 def get_submissions(
+    limit: int = Query(50, le=200),
+    offset: int = Query(0),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles([UserRole.FACULTY, UserRole.ADMIN]))
 ):
-    """Get all student submissions for Faculty/Admin grading registry."""
-    # Return all student submissions within the institution/organization
-    submissions = db.query(Submission).filter(
-        Submission.org_id == current_user.org_id
-    ).order_by(Submission.submitted_at.desc()).all()
+    """Get student submissions with pagination and faculty course scoping."""
+    query = db.query(Submission).filter(Submission.org_id == current_user.org_id)
+    if current_user.role == UserRole.FACULTY:
+        from models.academic import Course
+        query = query.join(Assignment).join(Course).filter(Course.faculty_id == current_user.id)
+
+    submissions = query.order_by(Submission.submitted_at.desc()).offset(offset).limit(limit).all()
 
     result = []
     for sub in submissions:
@@ -314,10 +316,8 @@ async def grade_submission(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles([UserRole.FACULTY, UserRole.ADMIN]))
 ):
-    """Grade a student submission."""
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
-    if not submission:
-        raise HTTPException(status_code=404, detail="Submission not found")
+    """Grade a student submission with central scoping check."""
+    submission = verify_submission_access(submission_id, current_user, db, action="grade")
 
     max_m = submission.assignment.max_marks if submission.assignment and submission.assignment.max_marks else 100
     if grade_data.marks_obtained < 0 or grade_data.marks_obtained > max_m:
@@ -367,4 +367,35 @@ async def grade_submission(
     )
 
     return {"message": "Submission graded successfully"}
+
+
+@router.post("/{assignment_id}/publish-results")
+async def publish_assignment_results(
+    assignment_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.FACULTY, UserRole.ADMIN]))
+):
+    """Faculty publishes assignment results making marks visible to students."""
+    assignment = verify_assignment_access(assignment_id, current_user, db, action="manage")
+    assignment.is_results_published = True
+    db.commit()
+
+    await log_audit(
+        db=db,
+        user_id=current_user.id,
+        org_id=current_user.org_id,
+        action="PUBLISH_ASSIGNMENT_RESULTS",
+        resource_type="ASSIGNMENT",
+        resource_id=assignment.id,
+        metadata={"assignment_id": assignment.id, "title": assignment.title},
+        request=request
+    )
+
+    return {
+        "message": f"Results for '{assignment.title}' published successfully. Marks are now visible to students.",
+        "assignment_id": assignment.id,
+        "is_results_published": True
+    }
+
 

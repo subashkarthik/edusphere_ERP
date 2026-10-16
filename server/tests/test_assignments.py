@@ -178,7 +178,24 @@ def test_assignment_full_workflow_and_certificate_score(assignment_test_data):
     )
     assert grade_res.status_code == 200
 
-    # 7. Student checks assignments, sees GRADED, 95/100, and feedback
+    # 7. Student checks assignments before publication: marks remain masked
+    unpub_res = client.get(
+        "/api/assignments/",
+        headers={"Authorization": f"Bearer {student_token}"},
+    )
+    assert unpub_res.status_code == 200
+    unpub_asg = next(a for a in unpub_res.json() if a["id"] == assignment_id)
+    assert unpub_asg["status"] == "SUBMITTED"
+    assert unpub_asg["marks_obtained"] is None
+
+    # Faculty publishes results
+    pub_res = client.post(
+        f"/api/assignments/{assignment_id}/publish-results",
+        headers={"Authorization": f"Bearer {faculty_token}"},
+    )
+    assert pub_res.status_code == 200
+
+    # Student checks assignments after publication: sees GRADED, 95/100, and feedback
     updated_list_res = client.get(
         "/api/assignments/",
         headers={"Authorization": f"Bearer {student_token}"},

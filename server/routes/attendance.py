@@ -15,6 +15,11 @@ from schemas.schemas import (
     AttendanceHistoryResponse,
 )
 from middleware.auth import get_current_user, require_roles
+from middleware.scoping import (
+    verify_course_access,
+    verify_attendance_session_access,
+    verify_org_access,
+)
 from models.synced_legacy import SyncedAttendance, SyncedTimetable, SyncedSubject
 from services.notification_service import notify_attendance_warning
 
@@ -34,16 +39,18 @@ def mark_course_attendance(
     Mark or update attendance for students in a course on a specific date.
     Upserts AttendanceSession (course_id + date) and AttendanceLog per student.
     """
-    course = db.query(Course).filter(Course.id == payload.course_id).first()
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
+    course = verify_course_access(payload.course_id, current_user, db, action="mark_attendance")
+
+    raw_date = payload.date or payload.session_date
+    if not raw_date:
+        raw_date = date.today().isoformat()
 
     try:
-        session_date = datetime.strptime(payload.date, "%Y-%m-%d").date()
+        session_date = datetime.strptime(raw_date, "%Y-%m-%d").date()
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DD")
 
-    marks_list = payload.marks or payload.students or []
+    marks_list = payload.marks or payload.students or payload.attendance or []
     if not marks_list:
         raise HTTPException(status_code=400, detail="No student attendance marks provided")
 
@@ -53,23 +60,67 @@ def mark_course_attendance(
         AttendanceSession.session_date == session_date,
     ).first()
 
-    if not session:
+    EDIT_WINDOW_HOURS = 24.0
+
+    if session:
+        # Check if edit window has expired (> 24 hours)
+        elapsed_seconds = (datetime.utcnow() - session.created_at).total_seconds()
+        elapsed_hours = elapsed_seconds / 3600.0
+        if elapsed_hours > EDIT_WINDOW_HOURS:
+            if not payload.reason or len(payload.reason.strip()) < 5:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Attendance edit window ({int(EDIT_WINDOW_HOURS)}h) has expired. A valid justification reason is required for retroactive edits."
+                )
+            # Create AuditLog entry for retroactive edit
+            from models.audit import AuditLog
+            audit = AuditLog(
+                org_id=current_user.org_id,
+                user_id=current_user.id,
+                actor_id=current_user.id,
+                action="ATTENDANCE_EDIT_OVERRIDE",
+                entity="ATTENDANCE_SESSION",
+                entity_id=session.id,
+                metadata_json={
+                    "reason": payload.reason.strip(),
+                    "course_id": payload.course_id,
+                    "session_date": str(session_date),
+                    "elapsed_hours": round(elapsed_hours, 1)
+                }
+            )
+            db.add(audit)
+
+        if payload.period:
+            session.period = payload.period
+        session.status = SessionStatus.CLOSED
+    else:
         session = AttendanceSession(
             course_id=payload.course_id,
             faculty_id=current_user.id,
             session_date=session_date,
+            period=payload.period,
             status=SessionStatus.CLOSED,
-            org_id=getattr(current_user, "org_id", "org-edusphere") or "org-edusphere",
+            org_id=current_user.org_id,
         )
         db.add(session)
         db.flush()
-    else:
-        session.status = SessionStatus.CLOSED
 
-    # Upsert AttendanceLogs
+    # Upsert AttendanceLogs (only for students enrolled in this course in this organization)
     marked_count = 0
     for item in marks_list:
         st_id = item.student_id if hasattr(item, "student_id") else item.get("student_id")
+        if not st_id:
+            continue
+
+        enr = db.query(Enrollment).filter(
+            Enrollment.student_id == st_id,
+            Enrollment.course_id == course.id,
+            Enrollment.org_id == current_user.org_id,
+            Enrollment.status.in_([EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED]),
+        ).first()
+        if not enr:
+            continue
+
         status_raw = (item.status if hasattr(item, "status") else item.get("status", "PRESENT")).upper()
 
         try:
@@ -139,10 +190,9 @@ def get_course_attendance_roster(
 ):
     """
     Get enrolled students for a course and their marked status for a given date.
+    Faculty can only view rosters for courses where faculty_id = me.
     """
-    course = db.query(Course).filter(Course.id == course_id).first()
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
+    course = verify_course_access(course_id, current_user, db, action="roster")
 
     target_date = date
     if not target_date:
@@ -207,55 +257,34 @@ def get_my_attendance(
     """
     Get the authenticated student's per-course attendance breakdown, percentage,
     warning indicators (< 75%), and historical attendance records.
+    Computed strictly via server/services/metrics.py.
     """
+    from services.metrics import attendance_for, attendance_overall
+
+    org_id = getattr(current_user, "org_id", "org-edusphere") or "org-edusphere"
+
     enrollments = db.query(Enrollment).filter(
         Enrollment.student_id == current_user.id,
-        Enrollment.status == EnrollmentStatus.ACTIVE,
+        Enrollment.status.in_([EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED]),
     ).all()
 
     course_summaries = []
-    total_attended_all = 0
-    total_held_all = 0
-
     for e in enrollments:
-        course = e.course
+        course = e.course or db.query(Course).filter(Course.id == e.course_id).first()
         if not course:
             continue
 
-        closed_sessions = db.query(AttendanceSession).filter(
-            AttendanceSession.course_id == course.id,
-            AttendanceSession.status == SessionStatus.CLOSED,
-        ).all()
-
-        total_held = len(closed_sessions)
-        session_ids = [s.id for s in closed_sessions]
-
-        if total_held > 0 and session_ids:
-            attended = db.query(AttendanceLog).filter(
-                AttendanceLog.session_id.in_(session_ids),
-                AttendanceLog.student_id == current_user.id,
-                AttendanceLog.status.in_([AttendanceStatus.PRESENT, AttendanceStatus.LATE]),
-            ).count()
-            pct = round((attended / total_held) * 100, 1)
-        else:
-            attended = 0
-            pct = 100.0 if total_held == 0 else 0.0
-
-        total_attended_all += attended
-        total_held_all += total_held
-
-        risk_status = "SAFE" if pct >= 75.0 else ("WARNING" if pct >= 65.0 else "CRITICAL")
-        is_low = (pct < 75.0 and total_held > 0)
+        c_attn = attendance_for(db, org_id, current_user.id, course.id)
 
         course_summaries.append({
             "course_id": course.id,
             "course_code": course.code,
             "course_name": course.name,
-            "percentage": pct,
-            "classes_held": total_held,
-            "classes_attended": attended,
-            "status": risk_status,
-            "is_low": is_low,
+            "percentage": c_attn["pct"],
+            "classes_held": c_attn["held"],
+            "classes_attended": c_attn["attended"],
+            "status": c_attn["status"],
+            "is_low": c_attn["is_low"],
         })
 
     # Student's complete chronological history
@@ -283,18 +312,16 @@ def get_my_attendance(
             "faculty_name": faculty.name if faculty else "Faculty",
         })
 
-    overall_pct = (
-        round((total_attended_all / total_held_all) * 100, 1)
-        if total_held_all > 0
-        else 100.0
-    )
+    overall_metrics = attendance_overall(db, org_id, current_user.id)
 
     return {
         "summary": course_summaries,
         "history": history,
-        "overall_percentage": overall_pct,
+        "overall_percentage": overall_metrics["pct"],
+        "total_classes_held": overall_metrics["held"],
+        "total_classes_attended": overall_metrics["attended"],
         "total_courses": len(course_summaries),
-        "has_warning": any(c["is_low"] for c in course_summaries),
+        "has_warning": overall_metrics["is_low"],
     }
 
 
@@ -310,9 +337,7 @@ def get_course_attendance_summary(
     """
     Get aggregate attendance statistics for a specific course.
     """
-    course = db.query(Course).filter(Course.id == course_id).first()
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
+    course = verify_course_access(course_id, current_user, db, action="read_metrics")
 
     closed_sessions = db.query(AttendanceSession).filter(
         AttendanceSession.course_id == course_id,
@@ -380,11 +405,13 @@ def get_attendance_summary(
 
 
 def _get_attendance_sqlite(db: Session, current_user: User):
-    """SQLite attendance summary."""
+    """Attendance summary wired to metrics."""
     if current_user.role == UserRole.STUDENT:
+        from services.metrics import attendance_for
+        org_id = getattr(current_user, "org_id", "org-edusphere") or "org-edusphere"
         enrollments = db.query(Enrollment).filter(
             Enrollment.student_id == current_user.id,
-            Enrollment.status == EnrollmentStatus.ACTIVE,
+            Enrollment.status.in_([EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED]),
         ).all()
 
         results = []
@@ -392,22 +419,14 @@ def _get_attendance_sqlite(db: Session, current_user: User):
             course = enrollment.course
             if not course:
                 continue
-            total_sessions = db.query(AttendanceSession).filter(
-                AttendanceSession.course_id == course.id,
-                AttendanceSession.status == SessionStatus.CLOSED,
-            ).count()
-            attended = db.query(AttendanceLog).join(AttendanceSession).filter(
-                AttendanceSession.course_id == course.id,
-                AttendanceLog.student_id == current_user.id,
-                AttendanceLog.status.in_([AttendanceStatus.PRESENT, AttendanceStatus.LATE]),
-            ).count()
-            percentage = round((attended / total_sessions * 100), 1) if total_sessions > 0 else 0
-            risk_status = "SAFE" if percentage >= 75.0 else ("WARNING" if percentage >= 65.0 else "CRITICAL")
-
+            c_attn = attendance_for(db, org_id, current_user.id, course.id)
             results.append(AttendanceSummaryResponse(
-                course_code=course.code, course_name=course.name,
-                percentage=percentage, classes_held=total_sessions,
-                classes_attended=attended, status=risk_status
+                course_code=course.code,
+                course_name=course.name,
+                percentage=c_attn["pct"],
+                classes_held=c_attn["held"],
+                classes_attended=c_attn["attended"],
+                status=c_attn["status"],
             ))
         return results
 
@@ -450,23 +469,25 @@ def create_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles([UserRole.FACULTY, UserRole.ADMIN])),
 ):
-    """Start a new attendance session for a course. Faculty/Admin only."""
-    course = db.query(Course).filter(Course.id == request.course_id).first()
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
+    """Start a new attendance session for a course. Faculty teaching course or Admin only."""
+    course = verify_course_access(request.course_id, current_user, db, action="write")
 
     session = AttendanceSession(
-        course_id=request.course_id,
+        course_id=course.id,
         faculty_id=current_user.id,
         session_date=datetime.strptime(request.session_date, "%Y-%m-%d").date(),
+        period=request.period,
+        topic=request.topic,
         start_time=request.start_time,
         end_time=request.end_time,
+        status=SessionStatus.OPEN,
+        org_id=current_user.org_id,
     )
     db.add(session)
     db.commit()
     db.refresh(session)
 
-    return {"id": session.id, "message": f"Session created for {course.name}", "status": session.status.value}
+    return {"id": session.id, "message": f"Session created for {course.name}", "status": session.status.value, "period": session.period}
 
 
 @router.post("/sessions/{session_id}/mark")
@@ -477,14 +498,48 @@ def mark_session_attendance(
     current_user: User = Depends(require_roles([UserRole.FACULTY, UserRole.ADMIN])),
 ):
     """Mark attendance for students in a specific session ID."""
-    session = db.query(AttendanceSession).filter(AttendanceSession.id == session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    session = verify_attendance_session_access(session_id, current_user, db, action="write")
+
+    # Check edit window
+    elapsed_seconds = (datetime.utcnow() - session.created_at).total_seconds()
+    elapsed_hours = elapsed_seconds / 3600.0
+    if elapsed_hours > 24.0:
+        if not request.reason or len(request.reason.strip()) < 5:
+            raise HTTPException(
+                status_code=400,
+                detail="Attendance edit window (24h) has expired. A valid justification reason is required for retroactive edits."
+            )
+        from models.audit import AuditLog
+        audit = AuditLog(
+            org_id=current_user.org_id,
+            user_id=current_user.id,
+            actor_id=current_user.id,
+            action="ATTENDANCE_EDIT_OVERRIDE",
+            entity="ATTENDANCE_SESSION",
+            entity_id=session.id,
+            metadata_json={
+                "reason": request.reason.strip(),
+                "course_id": session.course_id,
+                "session_date": str(session.session_date),
+                "elapsed_hours": round(elapsed_hours, 1)
+            }
+        )
+        db.add(audit)
 
     marked_count = 0
-    for mark in request.marks:
+    raw_marks = request.marks or request.attendance or []
+    for mark in raw_marks:
         student_id = mark.get("student_id")
         status_str = mark.get("status", "PRESENT")
+
+        # Verify student is actively enrolled
+        enr = db.query(Enrollment).filter(
+            Enrollment.student_id == student_id,
+            Enrollment.course_id == session.course_id,
+            Enrollment.org_id == current_user.org_id,
+        ).first()
+        if not enr:
+            continue
 
         try:
             att_status = AttendanceStatus(status_str)
@@ -504,6 +559,7 @@ def mark_session_attendance(
                 session_id=session_id,
                 student_id=student_id,
                 status=att_status,
+                org_id=session.org_id,
             )
             db.add(log)
         marked_count += 1
@@ -514,6 +570,25 @@ def mark_session_attendance(
     return {"message": f"Marked attendance for {marked_count} students", "session_status": "CLOSED"}
 
 
+@router.get("/course/{course_id}/student/{student_id}")
+def get_student_course_attendance(
+    course_id: str,
+    student_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get course-specific attendance for a student with central scoping.
+    Students can only view their own records; faculty only for assigned courses; admin whole org.
+    """
+    from middleware.scoping import verify_user_access
+    verify_user_access(student_id, current_user, db, action="read")
+    course = verify_course_access(course_id, current_user, db, action="read")
+
+    from services.metrics import attendance_for
+    return attendance_for(db, current_user.org_id, student_id, course.id)
+
+
 @router.get("/sessions/{session_id}")
 def get_session(
     session_id: str,
@@ -521,9 +596,7 @@ def get_session(
     current_user: User = Depends(get_current_user),
 ):
     """Get attendance session details with all logged marks."""
-    session = db.query(AttendanceSession).filter(AttendanceSession.id == session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    session = verify_attendance_session_access(session_id, current_user, db, action="read")
 
     logs = db.query(AttendanceLog).filter(AttendanceLog.session_id == session_id).all()
 
@@ -555,8 +628,10 @@ def get_attendance_history(
     current_user: User = Depends(get_current_user),
 ):
     """Get attendance history for a student in a specific course."""
+    course = verify_course_access(course_id, current_user, db, action="read_metrics")
+
     sessions = db.query(AttendanceSession).filter(
-        AttendanceSession.course_id == course_id,
+        AttendanceSession.course_id == course.id,
         AttendanceSession.status == SessionStatus.CLOSED,
     ).order_by(AttendanceSession.session_date.desc()).offset(offset).limit(limit).all()
 

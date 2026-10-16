@@ -37,19 +37,6 @@ interface LearningWorkspaceProps {
   onBack?: () => void;
 }
 
-const defaultModules: Module[] = [
-  {
-    id: 'default-mod',
-    title: 'C Programming Fundamentals',
-    lessons: [
-      { id: 'c-l1', title: '1. Getting Started with C Programming', duration: '12:45', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711172/vidssave.com_1__Getting_Started_with_C_Programming_2025___C_Programming_for_Beginners_1080P_p4zh7l.mp4' },
-      { id: 'c-l2', title: '2. C Variables and Print Output', duration: '15:30', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711662/vidssave.com_2__C_Variables_and_Print_Output___2025_C_Programming_for_Beginners_1080P_zvbax2.mp4' },
-      { id: 'c-l3', title: '3. Get User Input in C Programming', duration: '10:15', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711316/vidssave.com_4__Get_User_Input_in_C_Programming_1080P_k3ca6n.mp4' },
-      { id: 'c-l4', title: '4. Type Conversion in C (Implicit & Explicit)', duration: '14:20', type: 'video', contentUrl: 'https://res.cloudinary.com/ducisa7vu/video/upload/v1785711479/vidssave.com_7__Type_Conversion_in_C___Implicit_and_Explicit_Type_Conversion_1080P_d9tobz.mp4' }
-    ]
-  }
-];
-
 const LearningWorkspace: React.FC<LearningWorkspaceProps> = ({ courseData, onBack }) => {
   const [activeModule, setActiveModule] = useState(0);
   const [activeLesson, setActiveLesson] = useState(courseData?.activeLessonIndex || 0);
@@ -62,11 +49,9 @@ const LearningWorkspace: React.FC<LearningWorkspaceProps> = ({ courseData, onBac
   const { pulse, messages, send: sendSocket } = useSocket(userId);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const safeModules = courseData?.modules && courseData.modules.length > 0 ? courseData.modules : defaultModules;
-  const currentModule = safeModules[Math.min(activeModule, safeModules.length - 1)] || safeModules[0];
-  const currentLessons = currentModule?.lessons || [];
-  const currentLesson = currentLessons[Math.min(activeLesson, currentLessons.length - 1)] || currentLessons[0];
-  const courseTitle = courseData?.title || 'C Programming Masterclass';
+  const safeModules = courseData?.modules || [];
+  const allLessons = safeModules.flatMap(m => m.lessons || []);
+  const courseTitle = courseData?.title || 'Course Learning Workspace';
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -78,12 +63,33 @@ const LearningWorkspace: React.FC<LearningWorkspaceProps> = ({ courseData, onBac
     
     sendSocket({
       type: 'CLASS_CHAT',
-      user: 'Student', // In a real app, this would be from Auth
+      user: 'Student',
       text: newMessage,
       timestamp: new Date().toISOString()
     });
     setNewMessage('');
   };
+
+  if (allLessons.length === 0) {
+    return (
+      <div className="fixed inset-0 top-16 lg:left-64 flex flex-col items-center justify-center bg-[#050816] text-center p-8 animate-in fade-in duration-500">
+        <div className="max-w-md glass p-10 rounded-[2.5rem] border border-white/10 space-y-4">
+          <BookOpen size={48} className="mx-auto text-indigo-400" />
+          <h2 className="text-xl font-bold text-white">{courseTitle}</h2>
+          <p className="text-xs text-slate-400">No lessons published yet</p>
+          {onBack && (
+            <button onClick={onBack} className="glass-btn-primary px-6 py-2.5 rounded-xl text-xs font-bold text-white uppercase tracking-wider">
+              Back to Courses
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const currentModule = safeModules[Math.min(activeModule, safeModules.length - 1)] || safeModules[0];
+  const currentLessons = currentModule?.lessons || [];
+  const currentLesson = currentLessons[Math.min(activeLesson, currentLessons.length - 1)] || currentLessons[0];
 
   // Record progress when video passes 80%
   const handleVideoProgress = async (percentage: number) => {
@@ -96,7 +102,7 @@ const LearningWorkspace: React.FC<LearningWorkspaceProps> = ({ courseData, onBac
     }
   };
 
-  const videoSource = currentLesson?.contentUrl || currentLesson?.videoUrl || "https://res.cloudinary.com/ducisa7vu/video/upload/v1785711172/vidssave.com_1__Getting_Started_with_C_Programming_2025___C_Programming_for_Beginners_1080P_p4zh7l.mp4";
+  const videoSource = currentLesson?.contentUrl || currentLesson?.videoUrl || "";
 
   return (
     <div className="fixed inset-0 top-16 lg:left-64 flex overflow-hidden bg-[#050816] animate-in fade-in duration-700">
@@ -129,7 +135,7 @@ const LearningWorkspace: React.FC<LearningWorkspaceProps> = ({ courseData, onBac
           </div>
         </div>
         <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
-          {courseData.modules.map((m, mIdx) => (
+          {safeModules.map((m, mIdx) => (
             <div key={m.id} className="space-y-2">
               <h3 className="px-4 text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4">{m.title}</h3>
               <div className="space-y-1">
@@ -205,7 +211,7 @@ const LearningWorkspace: React.FC<LearningWorkspaceProps> = ({ courseData, onBac
                 <ChevronLeft size={16}/> Prev
               </button>
               <button 
-                onClick={() => setActiveLesson(prev => Math.min(courseData.modules[activeModule].lessons.length - 1, prev + 1))}
+                onClick={() => setActiveLesson(prev => Math.min(currentLessons.length - 1, prev + 1))}
                 className="px-6 py-2.5 glass-btn-primary rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all flex items-center gap-2"
               >
                 Next <ChevronRight size={16}/>

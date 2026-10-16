@@ -27,7 +27,7 @@ interface StudentCourseSummary {
   course_id: string;
   course_code: string;
   course_name: string;
-  percentage: number;
+  percentage: number | null;
   classes_held: number;
   classes_attended: number;
   status: string;
@@ -68,7 +68,7 @@ const AttendanceModule: React.FC<ModuleProps> = ({ role }) => {
   // -------------------------------------------------------------------------
   const [studentSummaries, setStudentSummaries] = useState<StudentCourseSummary[]>([]);
   const [studentHistory, setStudentHistory] = useState<StudentHistoryLog[]>([]);
-  const [overallPercentage, setOverallPercentage] = useState<number>(100);
+  const [overallPercentage, setOverallPercentage] = useState<number | null>(null);
   const [hasWarning, setHasWarning] = useState<boolean>(false);
   const [studentLoading, setStudentLoading] = useState(false);
   const [historySearch, setHistorySearch] = useState<string>('');
@@ -130,7 +130,7 @@ const AttendanceModule: React.FC<ModuleProps> = ({ role }) => {
       if (data) {
         setStudentSummaries(data.summary || []);
         setStudentHistory(data.history || []);
-        setOverallPercentage(data.overall_percentage ?? 100);
+        setOverallPercentage(data.overall_percentage !== undefined ? data.overall_percentage : null);
         setHasWarning(data.has_warning || false);
       }
     } catch (err: any) {
@@ -513,10 +513,14 @@ const AttendanceModule: React.FC<ModuleProps> = ({ role }) => {
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Aggregate Status:</span>
               <span
                 className={`text-base font-black ${
-                  overallPercentage >= 75 ? 'text-emerald-400' : 'text-rose-400'
+                  overallPercentage === null
+                    ? 'text-slate-400 text-xs'
+                    : overallPercentage >= 75
+                    ? 'text-emerald-400'
+                    : 'text-rose-400'
                 }`}
               >
-                {overallPercentage}%
+                {overallPercentage !== null ? `${overallPercentage}%` : 'No classes held yet'}
               </span>
             </div>
 
@@ -540,8 +544,9 @@ const AttendanceModule: React.FC<ModuleProps> = ({ role }) => {
           </div>
         ) : (
           studentSummaries.map((course) => {
-            const isLow = course.percentage < 75 && course.classes_held > 0;
-            const isWarning = course.percentage >= 75 && course.percentage < 85;
+            const hasSessions = course.percentage !== null && course.classes_held > 0;
+            const isLow = hasSessions && course.percentage! < 75;
+            const isWarning = hasSessions && course.percentage! >= 75 && course.percentage! < 85;
 
             return (
               <GlassCard key={course.course_id} className="p-6 rounded-[2rem] flex flex-col justify-between" hover={false}>
@@ -552,11 +557,17 @@ const AttendanceModule: React.FC<ModuleProps> = ({ role }) => {
                     </span>
                     <span
                       className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${
-                        isLow ? 'badge-rose text-rose-300' : isWarning ? 'badge-amber text-amber-300' : 'badge-emerald text-emerald-300'
+                        !hasSessions
+                          ? 'bg-slate-500/10 border border-slate-500/20 text-slate-400'
+                          : isLow
+                          ? 'badge-rose text-rose-300'
+                          : isWarning
+                          ? 'badge-amber text-amber-300'
+                          : 'badge-emerald text-emerald-300'
                       }`}
                     >
-                      {isLow ? <AlertTriangle size={12} /> : <CheckCircle2 size={12} />}
-                      {isLow ? 'Below 75%' : isWarning ? 'Moderate' : 'Regular'}
+                      {!hasSessions ? <Clock size={12} /> : isLow ? <AlertTriangle size={12} /> : <CheckCircle2 size={12} />}
+                      {!hasSessions ? 'No Sessions' : isLow ? 'Below 75%' : isWarning ? 'Moderate' : 'Regular'}
                     </span>
                   </div>
 
@@ -568,10 +579,10 @@ const AttendanceModule: React.FC<ModuleProps> = ({ role }) => {
                     <span className="text-slate-400 font-semibold">Attendance Rate</span>
                     <span
                       className={`text-base font-black ${
-                        isLow ? 'text-rose-400' : isWarning ? 'text-amber-400' : 'text-emerald-400'
+                        !hasSessions ? 'text-slate-400 text-xs' : isLow ? 'text-rose-400' : isWarning ? 'text-amber-400' : 'text-emerald-400'
                       }`}
                     >
-                      {course.percentage}%
+                      {hasSessions ? `${course.percentage}%` : 'No classes held yet'}
                     </span>
                   </div>
 
@@ -579,9 +590,15 @@ const AttendanceModule: React.FC<ModuleProps> = ({ role }) => {
                   <div className="h-2 w-full bg-white/[0.06] rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-700 ${
-                        isLow ? 'bg-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.5)]' : isWarning ? 'bg-amber-500' : 'bg-emerald-500 shadow-[0_0_12px_rgba(52,211,153,0.4)]'
+                        !hasSessions
+                          ? 'bg-slate-700'
+                          : isLow
+                          ? 'bg-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.5)]'
+                          : isWarning
+                          ? 'bg-amber-500'
+                          : 'bg-emerald-500 shadow-[0_0_12px_rgba(52,211,153,0.4)]'
                       }`}
-                      style={{ width: `${Math.min(100, course.percentage)}%` }}
+                      style={{ width: `${hasSessions ? Math.min(100, course.percentage!) : 0}%` }}
                     />
                   </div>
 

@@ -36,103 +36,23 @@ def get_or_create_settings(db: Session, org_id: str = "org-edusphere") -> Certif
     return setting
 
 
-def calculate_student_metrics(db: Session, student_id: str, course_id: str) -> Tuple[float, float, float]:
+def calculate_student_metrics(db: Session, student_id: str, course_id: str, org_id: str = "org-edusphere") -> Tuple[float, float, float]:
     """
-    Calculate real attendance percentage, average assessment score percentage, and course progress percentage.
-    No hardcoded fallbacks or fake shortcuts.
+    Delegate academic metrics calculation to the unified metrics service (server/services/metrics.py).
+    Returns (attendance_pct, assessment_pct, progress_pct).
     """
-    # 1. Calculate Real Attendance %
-    sessions = db.query(AttendanceSession).filter(AttendanceSession.course_id == course_id).all()
-    session_ids = [s.id for s in sessions]
-    
-    if session_ids:
-        logs = db.query(AttendanceLog).filter(
-            AttendanceLog.student_id == student_id,
-            AttendanceLog.session_id.in_(session_ids)
-        ).all()
-        if logs:
-            present_count = sum(1 for l in logs if l.status == AttendanceStatus.PRESENT)
-            # Use total sessions held if available, otherwise total logged records
-            total_sessions = max(len(sessions), len(logs))
-            attendance_pct = round((present_count / total_sessions) * 100.0, 1) if total_sessions > 0 else 0.0
-        else:
-            attendance_pct = 0.0
-    else:
-        # Check if attendance is tracked or not yet started
-        attendance_pct = 0.0
+    from services.metrics import attendance_for, assessment_for, progress_for
 
-    # 2. Calculate Real Assessment Score % (Quizzes + Graded Assignments + Exams)
-    assessment_scores: List[float] = []
+    attn = attendance_for(db, org_id, student_id, course_id)
+    assess = assessment_for(db, org_id, student_id, course_id)
+    prog = progress_for(db, org_id, student_id, course_id)
 
-    # 2a. Quizzes
-    quiz_attempts = db.query(QuizAttempt).join(Quiz).filter(
-        QuizAttempt.student_id == student_id,
-        Quiz.course_id == course_id
-    ).all()
-    for qa in quiz_attempts:
-        assessment_scores.append(float(qa.percentage))
+    # Convert None (e.g. no sessions held or no assessments) to 0.0 or 100.0 for legacy certificate threshold comparisons
+    attn_pct = attn["pct"] if attn["pct"] is not None else 0.0
+    assess_pct = assess["pct"] if assess["pct"] is not None else (100.0 if assess["total_items"] == 0 else 0.0)
+    prog_pct = prog["pct"] if prog["pct"] is not None else (100.0 if prog["total"] == 0 else 0.0)
 
-    # 2b. Graded Assignments
-    submissions = db.query(Submission).join(Assignment).filter(
-        Submission.student_id == student_id,
-        Assignment.course_id == course_id,
-        Submission.marks_obtained.isnot(None)
-    ).all()
-    for sub in submissions:
-        max_m = sub.assignment.max_marks if sub.assignment and sub.assignment.max_marks else 100
-        if max_m > 0:
-            pct = (sub.marks_obtained / max_m) * 100.0
-            assessment_scores.append(pct)
-
-    # 2c. Exams
-    exam_results = db.query(ExamResult).join(ExamSchedule).filter(
-        ExamResult.student_id == student_id,
-        ExamSchedule.course_id == course_id
-    ).all()
-    for er in exam_results:
-        max_m = er.exam.max_marks if er.exam and er.exam.max_marks else 100
-        if max_m > 0:
-            pct = (er.marks_obtained / max_m) * 100.0
-            assessment_scores.append(pct)
-
-    if assessment_scores:
-        assessment_pct = round(sum(assessment_scores) / len(assessment_scores), 1)
-    else:
-        # If no assessments exist in the entire course, default to 100.0 so students aren't blocked;
-        # otherwise if assessments exist but student took none, score is 0.0
-        total_course_assessments = (
-            db.query(Quiz).filter(Quiz.course_id == course_id).count() +
-            db.query(Assignment).filter(Assignment.course_id == course_id).count() +
-            db.query(ExamSchedule).filter(ExamSchedule.course_id == course_id).count()
-        )
-        assessment_pct = 100.0 if total_course_assessments == 0 else 0.0
-
-    # 3. Calculate Real Course Progress %
-    # Check lessons in course modules
-    lessons = db.query(Lesson).join(Module).filter(Module.course_id == course_id).all()
-    if lessons:
-        lesson_ids = [l.id for l in lessons]
-        completed_count = db.query(LessonProgress).filter(
-            LessonProgress.user_id == student_id,
-            LessonProgress.lesson_id.in_(lesson_ids),
-            LessonProgress.completed == True
-        ).count()
-        progress_pct = round((completed_count / len(lessons)) * 100.0, 1)
-    else:
-        # Check enrollment status
-        enrollment = db.query(Enrollment).filter(
-            Enrollment.student_id == student_id,
-            Enrollment.course_id == course_id
-        ).first()
-        if enrollment and enrollment.status == EnrollmentStatus.COMPLETED:
-            progress_pct = 100.0
-        elif enrollment:
-            # If enrolled in a course with no modular lessons defined, check if sessions completed or active
-            progress_pct = 100.0
-        else:
-            progress_pct = 0.0
-
-    return attendance_pct, assessment_pct, progress_pct
+    return attn_pct, assess_pct, prog_pct
 
 
 def generate_certificate_pdf(
@@ -141,7 +61,8 @@ def generate_certificate_pdf(
     course_name: str,
     issued_date: datetime,
     attendance_pct: float,
-    assessment_pct: float
+    assessment_pct: float,
+    progress_pct: float = 100.0
 ) -> str:
     """
     Generate an enterprise PDF certificate with a real QR code pointing to <FRONTEND_URL>/verify/<code>.
@@ -233,7 +154,7 @@ def generate_certificate_pdf(
         c.setFont("Helvetica-Bold", 17)
         c.drawCentredString(width / 2, height - 255, course_name)
 
-        # Metrics Pill Summary
+        # Metrics Pill Summary with Exact Snapshot Numbers
         c.setFillColor(colors.HexColor("#f8fafc"))
         c.setStrokeColor(colors.HexColor("#e2e8f0"))
         c.roundRect(width / 2 - 210, height - 310, 420, 40, 8, fill=1, stroke=1)
@@ -242,7 +163,7 @@ def generate_certificate_pdf(
         c.setFont("Helvetica-Bold", 10)
         c.drawString(width / 2 - 190, height - 293, f"Attendance: {attendance_pct}%")
         c.drawString(width / 2 - 30, height - 293, f"Assessment: {assessment_pct}%")
-        c.drawString(width / 2 + 110, height - 293, "Progress: 100%")
+        c.drawString(width / 2 + 110, height - 293, f"Progress: {progress_pct}%")
 
         # Footer Details (Date, QR Code, Verification Link, Signature)
         date_str = issued_date.strftime("%B %d, %Y")
@@ -291,26 +212,28 @@ def evaluate_and_issue_certificate(
     db: Session,
     student_id: str,
     course_id: str,
-    org_id: str = "org-edusphere"
+    org_id: str = "org-edusphere",
+    override: bool = False,
+    override_reason: Optional[str] = None,
+    override_by_id: Optional[str] = None
 ) -> Certificate:
     """
-    Evaluates rule criteria (Attendance >= 75%, Assessment >= 50%, Progress == 100%)
+    Evaluates rule criteria via unified metrics service (services.metrics.certificate_eligibility)
     and issues or updates the student's certificate with a unique secrets-based code (EDU-2026-XXXXXXXX).
+    Stores a snapshot (attendance %, assessment %, progress %) in the Certificate row at issue time.
     """
-    settings_obj = get_or_create_settings(db, org_id)
+    from services.metrics import certificate_eligibility
+
     student = db.query(User).filter(User.id == student_id).first()
     course = db.query(Course).filter(Course.id == course_id).first()
 
     if not student or not course:
         raise ValueError("Student or Course not found")
 
-    attendance_pct, assessment_pct, progress_pct = calculate_student_metrics(db, student_id, course_id)
-    
-    is_eligible = (
-        attendance_pct >= settings_obj.min_attendance_pct and
-        assessment_pct >= settings_obj.min_assessment_pct and
-        progress_pct >= settings_obj.min_progress_pct
-    )
+    elig = certificate_eligibility(db, org_id, student_id, course_id)
+    is_eligible = elig["eligible"] or override
+
+    attendance_pct, assessment_pct, progress_pct = calculate_student_metrics(db, student_id, course_id, org_id)
 
     cert = db.query(Certificate).filter(
         Certificate.user_id == student_id,
@@ -318,7 +241,6 @@ def evaluate_and_issue_certificate(
     ).first()
 
     if not cert:
-        # Generate stable, unique code: EDU-2026-XXXXXXXX (secrets token)
         cert_code = f"EDU-2026-{secrets.token_hex(4).upper()}"
         status = CertificateStatus.ISSUED if is_eligible else CertificateStatus.INELIGIBLE
         issued_dt = datetime.utcnow()
@@ -329,7 +251,8 @@ def evaluate_and_issue_certificate(
             course.name,
             issued_dt,
             attendance_pct,
-            assessment_pct
+            assessment_pct,
+            progress_pct
         ) if is_eligible else None
 
         cert = Certificate(
@@ -343,6 +266,9 @@ def evaluate_and_issue_certificate(
             attendance_pct=attendance_pct,
             assessment_pct=assessment_pct,
             progress_pct=progress_pct,
+            is_override=override,
+            override_reason=override_reason,
+            override_by_id=override_by_id,
             org_id=org_id
         )
         db.add(cert)
@@ -350,18 +276,23 @@ def evaluate_and_issue_certificate(
         cert.attendance_pct = attendance_pct
         cert.assessment_pct = assessment_pct
         cert.progress_pct = progress_pct
+        if override:
+            cert.is_override = True
+            cert.override_reason = override_reason
+            cert.override_by_id = override_by_id
+
         if cert.eligibility_status != CertificateStatus.REVOKED:
             if is_eligible:
                 cert.eligibility_status = CertificateStatus.ISSUED
-                if not cert.certificate_url or not os.path.exists(os.path.join(STORAGE_DIR, f"{re.sub(r'[^a-zA-Z0-9_-]', '', cert.certificate_code)}.pdf")):
-                    cert.certificate_url = generate_certificate_pdf(
-                        cert.certificate_code,
-                        student.name,
-                        course.name,
-                        cert.issued_date,
-                        attendance_pct,
-                        assessment_pct
-                    )
+                cert.certificate_url = generate_certificate_pdf(
+                    cert.certificate_code,
+                    student.name,
+                    course.name,
+                    cert.issued_date or datetime.utcnow(),
+                    attendance_pct,
+                    assessment_pct,
+                    progress_pct
+                )
             else:
                 cert.eligibility_status = CertificateStatus.INELIGIBLE
 

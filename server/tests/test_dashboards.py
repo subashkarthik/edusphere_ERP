@@ -132,8 +132,8 @@ def test_new_student_dashboard_shows_zeros(dashboard_test_data):
     assert res.status_code == 200
     res_data = res.json()
     assert res_data["enrolled_courses_count"] == 0
-    assert res_data["overall_attendance_pct"] == 0.0
-    assert res_data["average_assessment_score"] == 0.0
+    assert res_data["overall_attendance_pct"] is None
+    assert res_data["average_assessment_score"] is None
     assert res_data["certificates_earned_count"] == 0
     assert res_data["courses"] == []
     assert res_data["upcoming_quizzes"] == []
@@ -182,6 +182,7 @@ def test_student_enroll_and_attend_dashboard_updates(dashboard_test_data):
             course_id=data["course_id"],
             title="Real-time Scheduling Quiz",
             total_marks=100,
+            is_results_published=True,
             org_id="org-edusphere"
         )
         db.add(quiz)
@@ -274,3 +275,229 @@ def test_admin_dashboard_real_data(dashboard_test_data):
     assert "certificates" in res_data
     assert "attendance" in res_data
     assert "assessments" in res_data
+    assert "attendance_by_department" in res_data
+    assert "courses_without_faculty" in res_data
+    assert "students_without_enrollments" in res_data
+    assert "recent_audit_events" in res_data
+    assert "counts" in res_data
+    assert res_data["counts"]["students"] >= 1
+    assert res_data["counts"]["faculty"] >= 1
+
+
+def test_student_at_risk_warning_and_recovery_formula(dashboard_test_data):
+    """
+    Test 5: When attendance is below policy minimum (75%), student dashboard
+    flags course as at-risk and calculates consecutive recovery classes needed.
+    """
+    data = dashboard_test_data
+    db = SessionLocal()
+    try:
+        # Create course where held=4, attended=1 (25% < 75%)
+        risk_code = f"RSK{uuid.uuid4().hex[:6].upper()}"
+        risk_course = Course(
+            id=str(uuid.uuid4()),
+            org_id="org-edusphere",
+            code=risk_code,
+            name="Advanced Control Systems",
+            credits=3,
+            department_id="dept-dash-test",
+            faculty_id=data["faculty_id"],
+            is_active=True,
+        )
+        db.add(risk_course)
+        db.commit()
+
+        # Enroll student
+        enr = Enrollment(
+            id=str(uuid.uuid4()),
+            org_id="org-edusphere",
+            student_id=data["student_id"],
+            course_id=risk_course.id,
+            status=EnrollmentStatus.ACTIVE
+        )
+        db.add(enr)
+        db.commit()
+
+        # 4 sessions: 1 present, 3 absent
+        for i in range(4):
+            sess = AttendanceSession(
+                id=str(uuid.uuid4()),
+                org_id="org-edusphere",
+                course_id=risk_course.id,
+                faculty_id=data["faculty_id"],
+                session_date=datetime.utcnow().date(),
+            )
+            db.add(sess)
+            db.commit()
+
+            status = AttendanceStatus.PRESENT if i == 0 else AttendanceStatus.ABSENT
+            log = AttendanceLog(
+                id=str(uuid.uuid4()),
+                session_id=sess.id,
+                student_id=data["student_id"],
+                status=status,
+                org_id="org-edusphere"
+            )
+            db.add(log)
+            db.commit()
+
+        res = client.get(
+            "/api/dashboard/student",
+            headers={"Authorization": f"Bearer {data['student_token']}"}
+        )
+        assert res.status_code == 200
+        res_data = res.json()
+        assert len(res_data["at_risk_courses"]) >= 1
+        risk_info = next(c for c in res_data["at_risk_courses"] if c["course_id"] == risk_course.id)
+        assert risk_info["current_pct"] == 25.0
+        assert risk_info["policy_min_pct"] == 75.0
+        # Formula: ceil((75 * 4 - 100 * 1) / (100 - 75)) = ceil(200 / 25) = 8 consecutive classes
+        assert risk_info["classes_needed_to_recover"] == 8
+        assert "8 consecutive classes" in risk_info["formula_explanation"]
+    finally:
+        db.close()
+
+
+def test_faculty_dashboard_today_sessions_and_students_below_75(dashboard_test_data):
+    """
+    Test 6: Faculty dashboard exposes today's sessions, students below 75%, and class averages.
+    """
+    data = dashboard_test_data
+    res = client.get(
+        "/api/dashboard/faculty",
+        headers={"Authorization": f"Bearer {data['faculty_token']}"}
+    )
+    assert res.status_code == 200
+    res_data = res.json()
+    assert "today_sessions" in res_data
+    assert "today_sessions_count" in res_data
+    assert "students_below_75" in res_data
+    assert "class_averages_per_assessment" in res_data
+
+
+def test_new_student_empty_then_admin_enrolls_and_faculty_marks_attendance_updates_numbers(dashboard_test_data):
+    """
+    Test 7 (Specification):
+    1. New student -> empty dashboard with zeros.
+    2. Admin enrolls student in a course.
+    3. Faculty marks attendance.
+    4. Student refreshes -> numbers update after refresh.
+    5. Faculty refreshes -> numbers update after refresh.
+    6. Admin refreshes -> numbers update after refresh.
+    """
+    data = dashboard_test_data
+    db = SessionLocal()
+    try:
+        # 1. Create a brand new student
+        new_uid = str(uuid.uuid4())
+        fresh_email = f"fresh_student_{new_uid[:6]}@edusphere.edu.in"
+        fresh_student = User(
+            id=new_uid,
+            org_id="org-edusphere",
+            email=fresh_email,
+            password_hash=hash_password("freshpass123"),
+            name="Fresh Test Student",
+            role=UserRole.STUDENT,
+            enrollment_no=f"ED/NEW/{new_uid[:6].upper()}",
+            is_active=True,
+        )
+        db.add(fresh_student)
+        db.commit()
+
+        fresh_token = create_access_token({
+            "sub": fresh_student.id,
+            "email": fresh_student.email,
+            "role": fresh_student.role.value,
+            "org_id": fresh_student.org_id
+        })
+
+        # Step 1: Check fresh student dashboard -> ALL ZEROS, EMPTY
+        student_res_before = client.get(
+            "/api/dashboard/student",
+            headers={"Authorization": f"Bearer {fresh_token}"}
+        )
+        assert student_res_before.status_code == 200
+        before_data = student_res_before.json()
+        assert before_data["enrolled_courses_count"] == 0
+        assert before_data["courses"] == []
+        assert before_data["overall_attendance_pct"] is None
+        assert before_data["average_assessment_score"] is None
+        assert before_data["certificates_earned_count"] == 0
+        assert before_data["at_risk_courses"] == []
+
+        # Step 2: Admin enrolls the student into course
+        enrollment = Enrollment(
+            id=str(uuid.uuid4()),
+            org_id="org-edusphere",
+            student_id=fresh_student.id,
+            course_id=data["course_id"],
+            status=EnrollmentStatus.ACTIVE
+        )
+        db.add(enrollment)
+        db.commit()
+
+        # Step 3: Faculty marks attendance (creates today's session + logs PRESENT)
+        sess = AttendanceSession(
+            id=str(uuid.uuid4()),
+            org_id="org-edusphere",
+            course_id=data["course_id"],
+            faculty_id=data["faculty_id"],
+            session_date=datetime.utcnow().date(),
+            period="Period 1",
+            topic="Core Architecture"
+        )
+        db.add(sess)
+        db.commit()
+
+        attn_log = AttendanceLog(
+            id=str(uuid.uuid4()),
+            session_id=sess.id,
+            student_id=fresh_student.id,
+            status=AttendanceStatus.PRESENT,
+            org_id="org-edusphere"
+        )
+        db.add(attn_log)
+        db.commit()
+
+        # Step 4: Student refreshes dashboard -> numbers update
+        student_res_after = client.get(
+            "/api/dashboard/student",
+            headers={"Authorization": f"Bearer {fresh_token}"}
+        )
+        assert student_res_after.status_code == 200
+        after_data = student_res_after.json()
+        assert after_data["enrolled_courses_count"] == 1
+        assert len(after_data["courses"]) == 1
+        assert after_data["courses"][0]["id"] == data["course_id"]
+        assert after_data["courses"][0]["attendance_pct"] == 100.0
+        assert after_data["courses"][0]["attended"] == 1
+        assert after_data["courses"][0]["held"] == 1
+        assert after_data["overall_attendance_pct"] == 100.0
+        assert after_data["courses"][0]["is_at_risk"] is False
+
+        # Step 5: Faculty refreshes dashboard -> numbers update
+        faculty_res = client.get(
+            "/api/dashboard/faculty",
+            headers={"Authorization": f"Bearer {data['faculty_token']}"}
+        )
+        assert faculty_res.status_code == 200
+        fac_data = faculty_res.json()
+        assert fac_data["today_sessions_count"] >= 1
+        assert fac_data["total_students_count"] >= 1
+
+        # Step 6: Admin refreshes dashboard -> numbers update
+        admin_res = client.get(
+            "/api/dashboard/admin",
+            headers={"Authorization": f"Bearer {data['admin_token']}"}
+        )
+        assert admin_res.status_code == 200
+        adm_data = admin_res.json()
+        assert adm_data["counts"]["enrollments"] >= 1
+        assert adm_data["attendance"]["total_sessions"] >= 1
+        # Fresh student is now enrolled, so not in students_without_enrollments
+        unenrolled_ids = [s["id"] for s in adm_data["students_without_enrollments"]]
+        assert fresh_student.id not in unenrolled_ids
+    finally:
+        db.close()
+
+

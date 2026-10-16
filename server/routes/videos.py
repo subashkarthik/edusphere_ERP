@@ -222,42 +222,4 @@ def get_video_journey(
 
             if category_data["courses"]:
                 journey.append(category_data)
-
-    if not journey:
-        default_journey = [
-            {
-                "id": "cat1",
-                "title": "Semester 1: C Programming Masterclass",
-                "courses": [
-                    {
-                        "id": "c1",
-                        "title": "C Programming Fundamentals",
-                        "lessons": [
-                            { "id": "c-l1", "title": "1. Getting Started with C Programming", "type": "video", "duration": "12:45", "isCompleted": "c-l1" in completed_ids, "contentUrl": "https://res.cloudinary.com/ducisa7vu/video/upload/v1785711172/vidssave.com_1__Getting_Started_with_C_Programming_2025___C_Programming_for_Beginners_1080P_p4zh7l.mp4" },
-                            { "id": "c-l2", "title": "2. C Variables and Print Output", "type": "video", "duration": "15:30", "isCompleted": "c-l2" in completed_ids, "contentUrl": "https://res.cloudinary.com/ducisa7vu/video/upload/v1785711662/vidssave.com_2__C_Variables_and_Print_Output___2025_C_Programming_for_Beginners_1080P_zvbax2.mp4" },
-                            { "id": "c-l3", "title": "3. Get User Input in C Programming", "type": "video", "duration": "10:15", "isCompleted": "c-l3" in completed_ids, "contentUrl": "https://res.cloudinary.com/ducisa7vu/video/upload/v1785711316/vidssave.com_4__Get_User_Input_in_C_Programming_1080P_k3ca6n.mp4" },
-                            { "id": "c-l4", "title": "4. Type Conversion in C (Implicit & Explicit)", "type": "video", "duration": "14:20", "isCompleted": "c-l4" in completed_ids, "contentUrl": "https://res.cloudinary.com/ducisa7vu/video/upload/v1785711479/vidssave.com_7__Type_Conversion_in_C___Implicit_and_Explicit_Type_Conversion_1080P_d9tobz.mp4" }
-                        ]
-                    }
-                ]
-            },
-            {
-                "id": "cat2",
-                "title": "Semester 2: Java Programming & OOP Architecture",
-                "courses": [
-                    {
-                        "id": "c2",
-                        "title": "Java Core & Object Oriented Programming",
-                        "lessons": [
-                            { "id": "java-l1", "title": "1. Java Development Kit (JDK) Setup", "type": "video", "duration": "08:50", "isCompleted": "java-l1" in completed_ids, "contentUrl": "https://res.cloudinary.com/ducisa7vu/video/upload/v1785711546/vidssave.com_2_Java_Development_Kit_JDK_Setup_1080P_lzfrg0.mp4" },
-                            { "id": "java-l2", "title": "2. First Code in Java", "type": "video", "duration": "11:10", "isCompleted": "java-l2" in completed_ids, "contentUrl": "https://res.cloudinary.com/ducisa7vu/video/upload/v1785711745/vidssave.com_3_First_Code_in_Java_1080P_u6v7fr.mp4" },
-                            { "id": "java-l3", "title": "3. How Java Works (JVM, JRE & Bytecode)", "type": "video", "duration": "13:40", "isCompleted": "java-l3" in completed_ids, "contentUrl": "https://res.cloudinary.com/ducisa7vu/video/upload/v1785711883/vidssave.com_4_How_Java_Works_1080P_eril9s.mp4" },
-                            { "id": "java-l4", "title": "4. Variables & Data Types in Java", "type": "video", "duration": "16:05", "isCompleted": "java-l4" in completed_ids, "contentUrl": "https://res.cloudinary.com/ducisa7vu/video/upload/v1785712079/vidssave.com_5_Variables_in_Java_1080P_ugfhwt.mp4" }
-                        ]
-                    }
-                ]
-            }
-        ]
-        return default_journey
-
     return journey

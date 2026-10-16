@@ -1,17 +1,23 @@
+import os
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional, List
 from database import get_db
-from models.user import User, UserRole
+from models.user import User, UserRole, Department
 from models.academic import Course, Enrollment, CourseMaterial, EnrollmentStatus
+from models.content import Module, Lesson, LessonProgress
 from models.attendance import AttendanceSession, AttendanceLog, AttendanceStatus
-from schemas.schemas import CourseCreate, CourseResponse, EnrollRequest, MaterialCreate, MaterialResponse
+from schemas.schemas import (
+    CourseCreate, CourseUpdate, CourseResponse, CourseDetailResponse,
+    ModuleCreate, LessonCreate, EnrollRequest, MaterialCreate, MaterialResponse
+)
 from middleware.auth import get_current_user, require_roles
+from middleware.scoping import verify_course_access, verify_org_access
 from models.synced_legacy import SyncedSubject
-from access_db import get_faculty_by_id
 from services.notification_service import notify_enrollment
+from services.metrics import attendance_for, assessment_for, progress_for
 
 
 router = APIRouter(prefix="/api/courses", tags=["Courses"])
@@ -24,40 +30,109 @@ def _compute_progress(course: Course, db: Session) -> int:
     return min(int((sessions_held / estimated_total) * 100), 100) if estimated_total > 0 else 0
 
 
-import os
+def _build_course_response(course: Course, db: Session, current_user: User) -> CourseResponse:
+    # 1. Fetch modules and lessons
+    mod_query = db.query(Module).filter(
+        Module.course_id == course.id,
+        Module.org_id == current_user.org_id
+    )
+    if current_user.role == UserRole.STUDENT:
+        mod_query = mod_query.filter(Module.is_published == True)
+    modules = mod_query.order_by(Module.order_index).all()
 
-VIDEO_STORAGE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "storage", "videos")
+    modules_data = []
+    all_lessons = []
+    for mod in modules:
+        lesson_query = db.query(Lesson).filter(
+            Lesson.module_id == mod.id,
+            Lesson.org_id == current_user.org_id
+        )
+        if current_user.role == UserRole.STUDENT:
+            lesson_query = lesson_query.filter(Lesson.is_published == True)
+        lessons = lesson_query.order_by(Lesson.order_index).all()
 
-def _get_video_courses() -> List[dict]:
-    video_courses = []
-    if os.path.exists(VIDEO_STORAGE_DIR):
-        try:
-            categories = [d for d in os.listdir(VIDEO_STORAGE_DIR) if os.path.isdir(os.path.join(VIDEO_STORAGE_DIR, d))]
-            for category in categories:
-                cat_path = os.path.join(VIDEO_STORAGE_DIR, category)
-                courses = [d for d in os.listdir(cat_path) if os.path.isdir(os.path.join(cat_path, d))]
-                for c_name in courses:
-                    c_id = f"video-{category}-{c_name}".replace(" ", "-").lower()
-                    video_courses.append({
-                        "id": c_id,
-                        "code": f"VID-{c_name[:3].upper()}",
-                        "name": f"{c_name} ({category})",
-                        "credits": 4,
-                        "department_id": category,
-                        "faculty_id": None,
-                        "faculty_name": "Course Instructor",
-                        "semester": 1,
-                        "description": f"{c_name} Video Course under {category}",
-                        "schedule": "Self-Paced",
-                        "max_students": 200,
-                        "enrolled_count": 85,
-                        "progress": 50,
-                        "is_active": True,
-                        "is_lab": False,
-                    })
-        except Exception as e:
-            print(f"[Courses] Video directory scan error: {e}")
-    return video_courses
+        mod_lessons = []
+        for l in lessons:
+            c_type = l.content_type.value if hasattr(l.content_type, "value") else str(l.content_type)
+            lesson_obj = {
+                "id": l.id,
+                "title": l.title,
+                "content_type": c_type,
+                "type": c_type.lower(),
+                "content_url": l.content_url,
+                "content_body": l.content_body,
+                "duration": f"{l.duration_minutes} min" if l.duration_minutes else "Session",
+                "duration_minutes": l.duration_minutes,
+                "order_index": l.order_index,
+                "is_published": getattr(l, "is_published", True),
+            }
+            mod_lessons.append(lesson_obj)
+            all_lessons.append(lesson_obj)
+
+        modules_data.append({
+            "id": mod.id,
+            "title": mod.title,
+            "description": mod.description,
+            "order_index": mod.order_index,
+            "is_published": getattr(mod, "is_published", True),
+            "lessons": mod_lessons,
+        })
+
+    lessons_count = len(all_lessons)
+    lesson_types = sorted(list(set(l["type"] for l in all_lessons)))
+
+    # 2. Scoped Student Metrics
+    my_att_pct = None
+    my_marks_pct = None
+    if current_user.role == UserRole.STUDENT:
+        att_res = attendance_for(db, current_user.org_id, current_user.id, course.id)
+        my_att_pct = att_res.get("pct")
+
+        ass_res = assessment_for(db, current_user.org_id, current_user.id, course.id)
+        my_marks_pct = ass_res.get("pct")
+
+        if lessons_count > 0:
+            lesson_ids = [l["id"] for l in all_lessons]
+            completed_count = db.query(LessonProgress).filter(
+                LessonProgress.user_id == current_user.id,
+                LessonProgress.completed == True,
+                LessonProgress.lesson_id.in_(lesson_ids)
+            ).count()
+            prog_val = min(int((completed_count / lessons_count) * 100), 100)
+        else:
+            prog_val = 0
+    else:
+        prog_val = _compute_progress(course, db)
+
+    enrolled = db.query(Enrollment).filter(
+        Enrollment.course_id == course.id,
+        Enrollment.status == EnrollmentStatus.ACTIVE
+    ).count()
+
+    return CourseResponse(
+        id=course.id,
+        code=course.code,
+        name=course.name,
+        title=course.title or course.name,
+        credits=course.credits,
+        department_id=course.department_id,
+        department_name=course.department.name if course.department else None,
+        faculty_id=course.faculty_id,
+        faculty_name=course.faculty.name if course.faculty else None,
+        semester=course.semester,
+        description=course.description,
+        schedule=course.schedule,
+        max_students=course.max_students,
+        enrolled_count=enrolled,
+        progress=prog_val,
+        is_active=course.is_active,
+        syllabus_topics=course.syllabus_topics or [],
+        lessons_count=lessons_count,
+        lesson_types=lesson_types,
+        modules=modules_data,
+        my_attendance=my_att_pct,
+        my_marks=my_marks_pct,
+    )
 
 
 @router.get("")
@@ -72,72 +147,14 @@ def list_courses(
     """
     List courses.
     For students without `all=True`, returns their active enrolled courses.
-    For faculty/admins or when `all=True`, returns all active courses.
+    For faculty/admins or when `all=True`, returns active courses strictly within current_user.org_id.
     """
-    if current_user.role == UserRole.STUDENT and not all:
-        sqlite_courses = _list_courses_sqlite(db, current_user, limit, offset)
-        return [
-            c.dict() if hasattr(c, 'dict') else {
-                "id": c.id, "code": c.code, "name": c.name, "credits": c.credits,
-                "department_id": c.department_id, "faculty_id": c.faculty_id,
-                "faculty_name": c.faculty_name, "semester": c.semester,
-                "description": c.description, "schedule": c.schedule,
-                "max_students": c.max_students, "enrolled_count": c.enrolled_count,
-                "progress": c.progress, "is_active": c.is_active,
-            }
-            for c in sqlite_courses
-        ]
-
-    video_courses = _get_video_courses()
-
-    try:
-        # Fetch from PostgreSQL / Synced table
-        synced_subjects = db.query(SyncedSubject).all()
-        if not synced_subjects:
-            raise RuntimeError("Synced subjects table is empty")
-
-        result = list(video_courses)
-        for subj in synced_subjects:
-            result.append({
-                "id": str(subj.id),
-                "code": f"SUB-{subj.id}",
-                "name": subj.name,
-                "credits": subj.hours_per_week,
-                "department_id": subj.department or "",
-                "faculty_id": None,
-                "faculty_name": None,
-                "semester": 7,
-                "description": f"{subj.department or ''} Department",
-                "schedule": f"{subj.hours_per_week}h/week",
-                "max_students": 120,
-                "enrolled_count": 45,
-                "progress": 35,
-                "is_active": True,
-                "is_lab": subj.is_lab,
-            })
-        return result[offset:offset + limit]
-
-    except Exception as e:
-        # Fallback to SQLite
-        sqlite_courses = _list_courses_sqlite(db, current_user, limit, offset, force_all=all)
-        sqlite_dicts = [
-            c.dict() if hasattr(c, 'dict') else {
-                "id": c.id, "code": c.code, "name": c.name, "credits": c.credits,
-                "department_id": c.department_id, "faculty_id": c.faculty_id,
-                "faculty_name": c.faculty_name, "semester": c.semester,
-                "description": c.description, "schedule": c.schedule,
-                "max_students": c.max_students, "enrolled_count": c.enrolled_count,
-                "progress": c.progress, "is_active": c.is_active,
-            }
-            for c in sqlite_courses
-        ]
-        return (video_courses + sqlite_dicts)[offset:offset + limit]
-
+    return _list_courses_sqlite(db, current_user, limit, offset, force_all=all)
 
 
 def _list_courses_sqlite(db: Session, current_user: User, limit: int, offset: int, force_all: bool = False):
-    """SQLite-based course listing."""
-    query = db.query(Course).filter(Course.is_active == True)
+    """Course listing scoped strictly to current_user.org_id."""
+    query = db.query(Course).filter(Course.org_id == current_user.org_id, Course.is_active == True)
     
     if current_user.role == UserRole.STUDENT and not force_all:
         courses = query.join(Enrollment).filter(
@@ -149,45 +166,289 @@ def _list_courses_sqlite(db: Session, current_user: User, limit: int, offset: in
     else:
         courses = query.offset(offset).limit(limit).all()
 
-    result = []
-    for c in courses:
-        enrolled = db.query(Enrollment).filter(Enrollment.course_id == c.id, Enrollment.status == EnrollmentStatus.ACTIVE).count()
-        result.append(CourseResponse(
-            id=c.id, code=c.code, name=c.name, credits=c.credits,
-            department_id=c.department_id, faculty_id=c.faculty_id,
-            faculty_name=c.faculty.name if c.faculty else None,
-            semester=c.semester, description=c.description,
-            schedule=c.schedule, max_students=c.max_students,
-            enrolled_count=enrolled, progress=_compute_progress(c, db),
-            is_active=c.is_active,
-        ))
-    return result
+    return [_build_course_response(c, db, current_user) for c in courses]
 
 
-@router.post("/", response_model=CourseResponse)
+@router.post("/", response_model=CourseResponse, dependencies=[Depends(require_roles([UserRole.ADMIN, UserRole.FACULTY]))])
 def create_course(
     request: CourseCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FACULTY])),
+    current_user: User = Depends(get_current_user),
 ):
-    """Create a new course. Admin or Faculty only. Writes to SQLite."""
-    existing = db.query(Course).filter(Course.code == request.code).first()
+    """Create a new course scoped to current_user.org_id. Admin or Faculty only."""
+    existing = db.query(Course).filter(Course.org_id == current_user.org_id, Course.code == request.code).first()
     if existing:
         raise HTTPException(status_code=400, detail=f"Course code {request.code} already exists")
 
-    course = Course(**request.model_dump())
+    course_data = request.model_dump(exclude_unset=True)
+    course_data["org_id"] = current_user.org_id
+    if current_user.role == UserRole.FACULTY:
+        course_data["faculty_id"] = current_user.id
+    elif not course_data.get("faculty_id"):
+        course_data["faculty_id"] = current_user.id
+
+    dept_val = course_data.pop("department", None) or course_data.get("department_id")
+    resolved_dept_id = None
+    if dept_val:
+        dept = db.query(Department).filter(
+            (Department.id == dept_val) | (Department.name == dept_val) | (Department.code == dept_val)
+        ).first()
+        if dept:
+            resolved_dept_id = dept.id
+        else:
+            code_candidate = f"D-{uuid.uuid4().hex[:4].upper()}"
+            new_dept = Department(
+                id=str(uuid.uuid4()),
+                org_id=current_user.org_id,
+                name=dept_val,
+                code=code_candidate
+            )
+            db.add(new_dept)
+            db.commit()
+            resolved_dept_id = new_dept.id
+    if not resolved_dept_id:
+        existing_first = db.query(Department).filter(Department.org_id == current_user.org_id).first()
+        if existing_first:
+            resolved_dept_id = existing_first.id
+
+    course_data["department_id"] = resolved_dept_id
+
+    faculty_arg = course_data.pop("faculty", None)
+    if faculty_arg and not course_data.get("faculty_id"):
+        course_data["faculty_id"] = faculty_arg
+
+    if "syllabus_topics" in course_data and course_data["syllabus_topics"]:
+        course_data["syllabus_topics"] = [t.strip() for t in course_data["syllabus_topics"] if t.strip()]
+
+    course = Course(**course_data)
     db.add(course)
     db.commit()
     db.refresh(course)
 
-    return CourseResponse(
-        id=course.id, code=course.code, name=course.name, credits=course.credits,
-        department_id=course.department_id, faculty_id=course.faculty_id,
-        faculty_name=course.faculty.name if course.faculty else None,
-        semester=course.semester, description=course.description,
-        schedule=course.schedule, max_students=course.max_students,
-        enrolled_count=0, progress=0, is_active=course.is_active,
+    return _build_course_response(course, db, current_user)
+
+
+@router.put("/{course_id}", response_model=CourseResponse)
+@router.patch("/{course_id}", response_model=CourseResponse)
+def update_course(
+    course_id: str,
+    request: CourseUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FACULTY])),
+):
+    """Update course attributes (title, description, credits, semester, department, syllabus_topics)."""
+    course = verify_course_access(course_id, current_user, db, action="write")
+    update_data = request.model_dump(exclude_unset=True)
+
+    if "description" in update_data and update_data["description"] is not None:
+        if len(update_data["description"].strip()) < 30:
+            raise HTTPException(status_code=400, detail="Description must be at least 30 characters")
+        course.description = update_data["description"].strip()
+
+    if "code" in update_data and update_data["code"]:
+        course.code = update_data["code"]
+    if "title" in update_data and update_data["title"]:
+        course.title = update_data["title"]
+        if not update_data.get("name"):
+            course.name = update_data["title"]
+    if "name" in update_data and update_data["name"]:
+        course.name = update_data["name"]
+        if not course.title:
+            course.title = update_data["name"]
+    if "credits" in update_data and update_data["credits"] is not None:
+        course.credits = update_data["credits"]
+    if "semester" in update_data and update_data["semester"] is not None:
+        course.semester = update_data["semester"]
+    if "department_id" in update_data:
+        course.department_id = update_data["department_id"]
+    if "faculty_id" in update_data and current_user.role == UserRole.ADMIN:
+        course.faculty_id = update_data["faculty_id"]
+    if "schedule" in update_data:
+        course.schedule = update_data["schedule"]
+    if "is_active" in update_data and update_data["is_active"] is not None:
+        course.is_active = update_data["is_active"]
+    if "syllabus_topics" in update_data and update_data["syllabus_topics"] is not None:
+        course.syllabus_topics = [t.strip() for t in update_data["syllabus_topics"] if t.strip()]
+
+    db.commit()
+    db.refresh(course)
+    return _build_course_response(course, db, current_user)
+
+
+ALLOWED_EXTENSIONS = {".mp4", ".webm", ".mov", ".pdf", ".zip", ".png", ".jpg", ".jpeg", ".doc", ".docx"}
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+
+@router.post("/{course_id}/upload")
+async def upload_course_file(
+    course_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FACULTY])),
+):
+    """Authenticated upload of lesson content with file size and type limits."""
+    course = verify_course_access(course_id, current_user, db, action="write")
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File extension '{ext}' not allowed. Allowed types: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
+        )
+
+    contents = await file.read()
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="File exceeds maximum allowed size of 50MB")
+
+    upload_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "storage", "uploads")
+    os.makedirs(upload_dir, exist_ok=True)
+    clean_name = f"{uuid.uuid4()}_{os.path.basename(file.filename or 'upload').replace(' ', '_')}"
+    dest_path = os.path.join(upload_dir, clean_name)
+    with open(dest_path, "wb") as f:
+        f.write(contents)
+
+    detected_type = "VIDEO" if ext in [".mp4", ".webm", ".mov"] else ("PDF" if ext == ".pdf" else "DOCUMENT")
+
+    return {
+        "url": f"/uploads/{clean_name}",
+        "filename": file.filename,
+        "file_size": len(contents),
+        "content_type": detected_type,
+    }
+
+
+@router.post("/{course_id}/modules")
+def create_course_module(
+    course_id: str,
+    module_data: ModuleCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FACULTY])),
+):
+    course = verify_course_access(course_id, current_user, db, action="write")
+    new_module = Module(
+        id=str(uuid.uuid4()),
+        org_id=current_user.org_id,
+        course_id=course.id,
+        title=module_data.title,
+        description=module_data.description,
+        order_index=module_data.order_index,
+        is_published=module_data.is_published,
     )
+    db.add(new_module)
+    db.commit()
+    db.refresh(new_module)
+    return new_module
+
+
+@router.patch("/modules/{module_id}")
+def update_course_module(
+    module_id: str,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FACULTY])),
+):
+    module = db.query(Module).filter(Module.id == module_id, Module.org_id == current_user.org_id).first()
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+    verify_course_access(module.course_id, current_user, db, action="write")
+    if "title" in data:
+        module.title = data["title"]
+    if "description" in data:
+        module.description = data["description"]
+    if "is_published" in data:
+        module.is_published = bool(data["is_published"])
+    if "order_index" in data:
+        module.order_index = int(data["order_index"])
+    db.commit()
+    db.refresh(module)
+    return module
+
+
+@router.delete("/modules/{module_id}")
+def delete_course_module(
+    module_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FACULTY])),
+):
+    module = db.query(Module).filter(Module.id == module_id, Module.org_id == current_user.org_id).first()
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+    verify_course_access(module.course_id, current_user, db, action="write")
+    db.delete(module)
+    db.commit()
+    return {"message": "Module deleted successfully"}
+
+
+@router.post("/modules/{module_id}/lessons")
+def create_module_lesson(
+    module_id: str,
+    lesson_data: LessonCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FACULTY])),
+):
+    module = db.query(Module).filter(Module.id == module_id, Module.org_id == current_user.org_id).first()
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+    verify_course_access(module.course_id, current_user, db, action="write")
+    new_lesson = Lesson(
+        id=str(uuid.uuid4()),
+        org_id=current_user.org_id,
+        module_id=module.id,
+        title=lesson_data.title,
+        content_type=lesson_data.content_type.upper(),
+        content_url=lesson_data.content_url,
+        content_body=lesson_data.content_body,
+        duration_minutes=lesson_data.duration_minutes,
+        order_index=lesson_data.order_index,
+        is_published=lesson_data.is_published,
+    )
+    db.add(new_lesson)
+    db.commit()
+    db.refresh(new_lesson)
+    return new_lesson
+
+
+@router.patch("/lessons/{lesson_id}")
+def update_module_lesson(
+    lesson_id: str,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FACULTY])),
+):
+    lesson = db.query(Lesson).filter(Lesson.id == lesson_id, Lesson.org_id == current_user.org_id).first()
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    module = db.query(Module).filter(Module.id == lesson.module_id).first()
+    if module:
+        verify_course_access(module.course_id, current_user, db, action="write")
+    if "title" in data:
+        lesson.title = data["title"]
+    if "content_url" in data:
+        lesson.content_url = data["content_url"]
+    if "content_type" in data:
+        lesson.content_type = data["content_type"].upper()
+    if "duration_minutes" in data:
+        lesson.duration_minutes = int(data["duration_minutes"])
+    if "is_published" in data:
+        lesson.is_published = bool(data["is_published"])
+    db.commit()
+    db.refresh(lesson)
+    return lesson
+
+
+@router.delete("/lessons/{lesson_id}")
+def delete_module_lesson(
+    lesson_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FACULTY])),
+):
+    lesson = db.query(Lesson).filter(Lesson.id == lesson_id, Lesson.org_id == current_user.org_id).first()
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    module = db.query(Module).filter(Module.id == lesson.module_id).first()
+    if module:
+        verify_course_access(module.course_id, current_user, db, action="write")
+    db.delete(lesson)
+    db.commit()
+    return {"message": "Lesson deleted successfully"}
 
 
 @router.get("/my-enrollments")
@@ -206,11 +467,9 @@ def get_my_enrollments(
         c = enr.course
         if not c:
             continue
-        enrolled_count = db.query(Enrollment).filter(
-            Enrollment.course_id == c.id,
-            Enrollment.status == EnrollmentStatus.ACTIVE
-        ).count()
-        result.append({
+        c_resp = _build_course_response(c, db, current_user)
+        enr_dict = c_resp.model_dump()
+        enr_dict.update({
             "enrollment_id": enr.id,
             "course_id": c.id,
             "status": enr.status.value if hasattr(enr.status, "value") else str(enr.status),
@@ -218,66 +477,29 @@ def get_my_enrollments(
             "grade": enr.grade,
             "gpa_points": enr.gpa_points,
             "enrolled_at": enr.enrolled_at.isoformat() if enr.enrolled_at else None,
-            "id": c.id,
-            "code": c.code,
-            "name": c.name,
-            "credits": c.credits,
-            "department_id": c.department_id,
-            "department_name": c.department.name if c.department else None,
-            "faculty_id": c.faculty_id,
-            "faculty_name": c.faculty.name if c.faculty else None,
-            "semester": c.semester,
-            "description": c.description,
-            "schedule": c.schedule,
-            "max_students": c.max_students,
-            "enrolled_count": enrolled_count,
-            "progress": _compute_progress(c, db),
-            "is_active": c.is_active,
         })
+        result.append(enr_dict)
     return result
 
 
-@router.get("/{course_id}")
+@router.get("/{course_id}", response_model=CourseResponse)
 def get_course(course_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Get course details by ID. Tries SyncedSubject first, then SQLite."""
-    try:
-        subject = db.query(SyncedSubject).filter(SyncedSubject.id == int(course_id)).first()
-        if subject:
-            return {
-                "id": str(course_id),
-                "code": f"SUB-{course_id}",
-                "name": subject.name,
-                "credits": subject.hours_per_week,
-                "department_id": subject.department or "",
-                "faculty_id": None,
-                "faculty_name": None,
-                "semester": 7,
-                "description": f"{subject.department or ''} Department",
-                "schedule": f"{subject.hours_per_week}h/week",
-                "max_students": 120,
-                "enrolled_count": 0,
-                "progress": 0,
-                "is_active": True,
-            }
-    except Exception:
-        pass
+    """Get course details by ID scoped to current_user.org_id."""
+    course = verify_course_access(course_id, current_user, db, action="read")
+    return _build_course_response(course, db, current_user)
 
 
-    # Fallback to SQLite
-    course = db.query(Course).filter(Course.id == course_id).first()
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
-
-    enrolled = db.query(Enrollment).filter(Enrollment.course_id == course.id, Enrollment.status == EnrollmentStatus.ACTIVE).count()
-    return CourseResponse(
-        id=course.id, code=course.code, name=course.name, credits=course.credits,
-        department_id=course.department_id, faculty_id=course.faculty_id,
-        faculty_name=course.faculty.name if course.faculty else None,
-        semester=course.semester, description=course.description,
-        schedule=course.schedule, max_students=course.max_students,
-        enrolled_count=enrolled, progress=_compute_progress(course, db),
-        is_active=course.is_active,
-    )
+@router.delete("/{course_id}")
+def delete_course(
+    course_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.ADMIN])),
+):
+    """Delete course. Admin within same org only."""
+    course = verify_course_access(course_id, current_user, db, action="manage")
+    course.is_active = False
+    db.commit()
+    return {"message": "Course deleted successfully", "id": course.id}
 
 
 @router.post("/{course_id}/self-enroll")
@@ -339,9 +561,10 @@ def self_enroll(
 
     # Dispatch notification event
     try:
+        from services.notification_service import notify_enrollment
         notify_enrollment(db, current_user.id, course)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[SELF-ENROLL NOTIFICATION ERROR] {e}")
 
     return {
         "message": f"Successfully enrolled in {course.name}",
@@ -359,23 +582,9 @@ def get_course_enrolled_students(
 ):
     """
     Get the list of enrolled students for a course.
-    Faculty teaching this course or Admins only.
+    Faculty teaching this course or Admins only in the same org.
     """
-    if current_user.role not in [UserRole.FACULTY, UserRole.ADMIN]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Forbidden: Only faculty and admins can view enrolled students."
-        )
-
-    course = db.query(Course).filter(Course.id == course_id).first()
-    if not course:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
-
-    if current_user.role == UserRole.FACULTY and course.faculty_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Forbidden: You can only view enrolled students for your own courses."
-        )
+    course = verify_course_access(course_id, current_user, db, action="roster")
 
     enrollments = db.query(Enrollment).filter(
         Enrollment.course_id == course_id,
@@ -418,23 +627,30 @@ def enroll_students(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles([UserRole.ADMIN])),
 ):
-    """Enroll students in a course. Admin only. Writes to SQLite."""
-    course = db.query(Course).filter(Course.id == course_id).first()
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
+    """Enroll students in a course. Admin only in their organization."""
+    course = verify_course_access(course_id, current_user, db, action="manage")
 
     enrolled_count = 0
     for student_id in request.student_ids:
-        student = db.query(User).filter(User.id == student_id, User.role == UserRole.STUDENT).first()
+        student = db.query(User).filter(
+            User.id == student_id,
+            User.org_id == current_user.org_id,
+            User.role == UserRole.STUDENT
+        ).first()
         if not student:
             continue
         existing = db.query(Enrollment).filter(
             Enrollment.student_id == student_id,
-            Enrollment.course_id == course_id,
+            Enrollment.course_id == course.id,
         ).first()
         if existing:
             continue
-        enrollment = Enrollment(student_id=student_id, course_id=course_id, status=EnrollmentStatus.ACTIVE)
+        enrollment = Enrollment(
+            org_id=current_user.org_id,
+            student_id=student_id,
+            course_id=course.id,
+            status=EnrollmentStatus.ACTIVE
+        )
         db.add(enrollment)
         enrolled_count += 1
         try:
@@ -452,8 +668,12 @@ def list_materials(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List course materials. From SQLite."""
-    materials = db.query(CourseMaterial).filter(CourseMaterial.course_id == course_id).order_by(CourseMaterial.uploaded_at.desc()).all()
+    """List course materials scoped by enrollment or teaching assignment."""
+    course = verify_course_access(course_id, current_user, db, action="materials")
+    materials = db.query(CourseMaterial).filter(
+        CourseMaterial.course_id == course.id,
+        CourseMaterial.org_id == current_user.org_id
+    ).order_by(CourseMaterial.uploaded_at.desc()).all()
     return [
         MaterialResponse(
             id=m.id, title=m.title, file_type=m.file_type,
@@ -472,9 +692,11 @@ def add_material(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles([UserRole.FACULTY, UserRole.ADMIN])),
 ):
-    """Upload course material. Faculty or Admin only. Writes to SQLite."""
+    """Upload course material. Faculty teaching this course or Admin only."""
+    course = verify_course_access(course_id, current_user, db, action="write")
     material = CourseMaterial(
-        course_id=course_id,
+        course_id=course.id,
+        org_id=current_user.org_id,
         uploaded_by_id=current_user.id,
         title=request.title,
         file_type=request.file_type,

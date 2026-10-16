@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <script>
+        if (typeof window !== 'undefined' && window.location.hostname === 'eslms.online') {
+            window.location.replace('https://www.eslms.online' + window.location.pathname + window.location.search);
+        }
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>EduSphere — Universal University LMS System</title>
     <meta name="description" content="EduSphere: A high-performance, student-centric Universal University LMS System for courses, resources, and academic records.">
     <meta name="keywords" content="LMS, University Management, Student Portal, Course Management, Education Platform">

@@ -232,15 +232,15 @@ def test_faculty_creates_quiz_student_takes_and_scores_match(quiz_test_data):
     )
     assert submit_res.status_code == 200
     result = submit_res.json()
-    assert result["score"] == 25.0
+    # Before publication: marks are masked for students
+    assert result["is_results_published"] is False
+    assert result["score"] is None
+    assert result["percentage"] is None
+    assert result["passed"] is None
     assert result["total_marks"] == 40
-    assert result["percentage"] == 62.5
-    assert result["passed"] is True
-    assert result["correct_answers"] == 2
     assert result["total_questions"] == 3
-    assert len(result["review"]) == 3
 
-    # 6. Faculty views attempts and results
+    # 6. Faculty views attempts and results with full server-side scores
     attempts_res = client.get(
         f"/api/exams/quizzes/{quiz_id}/attempts",
         headers={"Authorization": f"Bearer {faculty_token}"},
@@ -254,6 +254,25 @@ def test_faculty_creates_quiz_student_takes_and_scores_match(quiz_test_data):
     assert student_attempt["score"] == 25.0
     assert student_attempt["passed"] is True
     assert student_attempt["tab_switch_violations"] == 1
+
+    # 7. Faculty publishes results
+    pub_res = client.post(
+        f"/api/exams/quizzes/{quiz_id}/publish-results",
+        headers={"Authorization": f"Bearer {faculty_token}"},
+    )
+    assert pub_res.status_code == 200
+
+    # 8. Student now sees published marks and status
+    student_quiz_list = client.get(
+        "/api/exams/quizzes",
+        headers={"Authorization": f"Bearer {enrolled_token}"},
+    )
+    assert student_quiz_list.status_code == 200
+    sq = next(q for q in student_quiz_list.json() if q["id"] == quiz_id)
+    assert sq["is_results_published"] is True
+    assert sq["best_score"] == 25.0
+    assert sq["percentage"] == 62.5
+    assert sq["passed"] is True
 
 
 def test_student_cannot_create_quiz(quiz_test_data):

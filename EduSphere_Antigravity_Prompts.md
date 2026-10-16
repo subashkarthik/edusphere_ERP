@@ -68,7 +68,7 @@ Task: finish quizzes. Files: views/ExamsModule.tsx, server quiz routes/models, s
 1. Faculty create-quiz modal must support: title, course (dropdown of the faculty's real courses – remove the default 'course-1'), time limit, pass %, and adding MCQ questions (question text, 4 options, correct option, marks). Save to backend in one call.
 2. Student: list only quizzes for enrolled courses; take quiz with countdown timer; auto-submit on timeout (fix the stale-closure bug – use refs or functional state); backend calculates score (never trust client score); store attempt, score, pass/fail; one or limited attempts.
 3. Show result + review of correct answers after submit.
-4. Remove DEFAULT_QUIZZES / FALLBACK_QUESTIONS / fake ids. Fix `userChoice.upper?.()` and the `reloadQuizzes` that useApi does not return.
+4. Remove mock quizzes / fallback questions / fake ids. Fix `userChoice.upper?.()` and the `reloadQuizzes` that useApi does not return.
 5. Faculty sees attempts/results table per quiz.
 Test: faculty creates a 3-question quiz → student takes it → score matches manual calculation → faculty sees the result.
 ```
@@ -78,7 +78,7 @@ Test: faculty creates a 3-question quiz → student takes it → score matches m
 ```
 Task: fix views/AssignmentModule.tsx. 
 1. Only ONE grading modal can be open at a time. 
-2. Remove DEFAULT_SUBMISSIONS demo data; faculty sees only real submissions.
+2. Remove sample submissions demo data; faculty sees only real submissions.
 3. Rubric default must be 0, not full marks. Validate marks <= max marks.
 4. Student can upload a submission (use the authenticated upload endpoint) and see grade + feedback.
 5. Graded marks must be stored so they can feed P6 (certificate eligibility) as part of the assessment score.
@@ -92,9 +92,9 @@ Task: make certification truly integrated. Files: server/routes/certificates.py,
 RULE (configurable per course, defaults): certificate is issued ONLY IF attendance >= 75% AND average assessment score (quizzes + graded assignments) >= 50% AND course progress == 100%.
 1. In /my-certificates and wherever certificates are evaluated, use evaluate_and_issue_certificate with REAL attendance, assessment and progress numbers from the DB. Delete evaluate_video_course_certificates and the scan of local storage/videos. Remove hardcoded attendance_pct=95.0 and the "progress >= 50" shortcut.
 2. Certificate code must be stable and unique: use secrets/uuid based code (e.g. EDU-2026-XXXXXXXX), stored in DB. Never Python hash().
-3. PDF must draw a real QR code (qrcode lib) pointing to <FRONTEND_URL>/verify/<code>. Sanitize the filename. Student name in notifications must be the real student, not "Alex Johnson".
+3. PDF must draw a real QR code (qrcode lib) pointing to <FRONTEND_URL>/verify/<code>. Sanitize the filename. Student name in notifications must be the real student, not a hardcoded name.
 4. Public verify endpoint GET /api/certificates/verify/{code} returns valid/revoked, student, course, date. CertificateVerification page uses it.
-5. Student UI: for every enrolled course show an eligibility checklist ("Attendance 82% ✔ / Assessment 40% ✘ / Progress 100% ✔") and the Download button only when eligible. Remove defaultStudentCerts fake data completely.
+5. Student UI: for every enrolled course show an eligibility checklist ("Attendance 82% ✔ / Assessment 40% ✘ / Progress 100% ✔") and the Download button only when eligible. Remove mock cert fake data completely.
 6. Faculty/admin: view issued certs, revoke (with auth header), see eligibility per student.
 Test (do all four): (a) student with 60% attendance → NOT eligible, no certificate; (b) all criteria met → certificate issued; (c) scan QR / open /verify/<code> → shows valid; (d) revoke → verify shows revoked.
 ```
@@ -105,7 +105,7 @@ Test (do all four): (a) student with 60% attendance → NOT eligible, no certifi
 Task: dashboards must show real data. Files: views/Dashboard.tsx, views/ExecutiveCommandCenter.tsx, FacultyWorkspace.tsx, StudentJourneyWorkspace.tsx, FacultyDashboard.tsx, AdminDashboard.tsx, constants.tsx.
 1. Dashboard.tsx should render by role: STUDENT → StudentIntelligenceDashboard (enrolled courses, attendance %, upcoming quizzes/assignments, certificates earned/eligible), FACULTY → FacultyDashboard (my courses, students, pending grading, attendance today), ADMIN → AdminDashboard (users by role, courses, enrollments, certificates issued, attendance rate).
 2. Create backend endpoints GET /api/dashboard/student, /faculty, /admin computing everything from DB.
-3. Delete ExecutiveCommandCenter, FacultyWorkspace, StudentJourneyWorkspace and every MOCK_* constant in constants.tsx that becomes unused. Empty state ("No courses yet") instead of fake numbers.
+3. Delete ExecutiveCommandCenter, FacultyWorkspace, StudentJourneyWorkspace and every mock constant in constants.tsx that becomes unused. Empty state ("No courses yet") instead of fake numbers.
 4. Every number on the dashboard must be traceable to a DB query.
 Test: create a new student with no data → dashboard shows zeros, not fake numbers; enroll + attend → numbers change after refresh.
 ```
@@ -115,7 +115,7 @@ Test: create a new student with no data → dashboard shows zeros, not fake numb
 ```
 Task: remove everything that is not part of the 5 pillars (login/roles, enrollment, attendance, assessments, certification) + dashboard.
 Delete these views and all their routes, menu entries, imports and constants: EnterpriseEcosystem.tsx, EcosystemDrawer.tsx, VoiceVivaModule.tsx, VirtualLab3DView.tsx, SkillQuestView.tsx, DegreeAuditView.tsx, SystemModule.tsx (fake telemetry), JudgeDemoTour.tsx. Review LibraryView.tsx, TimetableView.tsx, AnnouncementsView.tsx: keep only if they use real data and work end to end; otherwise delete.
-Remove fake KPIs/buzzwords (NAAC A++, ₹ crore figures, "Quantum", "Neural Sentinel", Math.random CPU stats) from the whole codebase. Remove unused Gemini/Cloudinary/B2/MS-Access-sync code unless it is used by a pillar.
+Remove fake KPIs/buzzwords from the whole codebase. Remove unused Gemini/Cloudinary/B2/MS-Access-sync code unless it is used by a pillar.
 Make sure the sidebar shows only: Dashboard, Courses, Attendance, Assessments (Quizzes/Assignments), Certificates, Users (admin), Settings.
 Test: npm run build with zero errors, no dead menu items, grep for the removed names returns nothing.
 ```

@@ -194,6 +194,16 @@ def test_faculty_grades_assignment_triggers_student_notification(notifications_f
 
 def test_student_self_enroll_triggers_notification(notifications_fixture):
     """Test: Student enrolling in a course creates an enrollment notification."""
+    db = SessionLocal()
+    try:
+        db.query(Enrollment).filter(
+            Enrollment.student_id == notifications_fixture["student_id"],
+            Enrollment.course_id == "course-notif-self"
+        ).delete()
+        db.commit()
+    finally:
+        db.close()
+
     stu_headers = {"Authorization": f"Bearer {notifications_fixture['stu_token']}"}
 
     # Enroll in course-notif-self via self-enroll endpoint
@@ -294,7 +304,7 @@ def test_mark_all_notifications_read(notifications_fixture):
     assert check_res.json()["unread_count"] == 0
 
 
-def test_smtp_email_silent_fallback_without_env():
+def test_smtp_email_silent_skip_without_env():
     """Test: send_email works without crashing when SMTP is not configured."""
     result = send_email(
         to_email="test_student@edusphere.edu.in",

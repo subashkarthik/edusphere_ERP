@@ -20,7 +20,7 @@ interface RubricGradingModalProps {
   onSubmitGrade: (totalScore: number, feedback: string, rubricScores?: Record<string, number>) => void;
 }
 
-const DEFAULT_RUBRICS: RubricCriterion[] = [
+const STANDARD_RUBRICS: RubricCriterion[] = [
   {
     id: 'crit-1',
     name: 'Technical Implementation & Architecture',
@@ -159,7 +159,7 @@ export const RubricGradingModal: React.FC<RubricGradingModalProps> = ({
 
         {/* Rubrics Criteria List */}
         <div className="flex-1 my-4 space-y-5 overflow-y-auto pr-2">
-          {DEFAULT_RUBRICS.map((criterion) => (
+          {STANDARD_RUBRICS.map((criterion) => (
             <div key={criterion.id} className="bg-slate-950/60 p-5 rounded-2xl border border-white/5 space-y-3">
               <div className="flex items-center justify-between">
                 <div>

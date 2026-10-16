@@ -15,20 +15,30 @@ import {
 const AdminDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<{
+    counts: { students: number; faculty: number; courses: number; enrollments: number; total_users: number; admins: number };
     users: { total: number; students: number; faculty: number; admins: number };
     courses: { total: number; departments: number };
     enrollments: { total_active: number };
-    certificates: { issued: number; revoked: number; ineligible: number };
+    certificates: { issued: number; revoked: number; ineligible?: number };
     attendance: { average_rate: number; total_sessions: number; total_logs: number };
+    attendance_by_department: any[];
+    courses_without_faculty: any[];
+    students_without_enrollments: any[];
     assessments: { total_quizzes: number; total_quiz_attempts: number; total_assignments: number; total_submissions: number };
+    recent_audit_events: any[];
     recent_audit_logs: any[];
   }>({
+    counts: { students: 0, faculty: 0, courses: 0, enrollments: 0, total_users: 0, admins: 0 },
     users: { total: 0, students: 0, faculty: 0, admins: 0 },
     courses: { total: 0, departments: 0 },
     enrollments: { total_active: 0 },
     certificates: { issued: 0, revoked: 0, ineligible: 0 },
     attendance: { average_rate: 0, total_sessions: 0, total_logs: 0 },
+    attendance_by_department: [],
+    courses_without_faculty: [],
+    students_without_enrollments: [],
     assessments: { total_quizzes: 0, total_quiz_attempts: 0, total_assignments: 0, total_submissions: 0 },
+    recent_audit_events: [],
     recent_audit_logs: []
   });
 
@@ -222,18 +232,18 @@ const AdminDashboard: React.FC = () => {
 
       {/* 5 Core Real KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        {/* 1. Total Users */}
+        {/* 1. Total Students & Faculty */}
         <div className="glass-panel p-5 rounded-3xl border border-white/10 space-y-3">
           <div className="flex items-center justify-between">
             <div className="p-3 bg-indigo-500/15 text-indigo-400 rounded-2xl">
               <Users size={20} />
             </div>
-            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Database</span>
+            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Database Feed</span>
           </div>
           <div>
-            <div className="text-2xl font-black text-white">{data.users.total}</div>
+            <div className="text-2xl font-black text-white">{data.counts?.students ?? data.users.students}</div>
             <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
-              {data.users.students} Students • {data.users.faculty} Faculty
+              Active Students ({data.counts?.faculty ?? data.users.faculty} Faculty)
             </div>
           </div>
         </div>
@@ -247,9 +257,9 @@ const AdminDashboard: React.FC = () => {
             <span className="text-[9px] font-black uppercase tracking-wider text-purple-400">Curricula</span>
           </div>
           <div>
-            <div className="text-2xl font-black text-white">{data.courses.total}</div>
+            <div className="text-2xl font-black text-white">{data.counts?.courses ?? data.courses.total}</div>
             <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
-              Across {data.courses.departments} Departments
+              Across {data.attendance_by_department?.length || data.courses.departments} Departments
             </div>
           </div>
         </div>
@@ -263,24 +273,26 @@ const AdminDashboard: React.FC = () => {
             <span className="text-[9px] font-black uppercase tracking-wider text-emerald-400">Active</span>
           </div>
           <div>
-            <div className="text-2xl font-black text-white">{data.enrollments.total_active}</div>
+            <div className="text-2xl font-black text-white">{data.counts?.enrollments ?? data.enrollments.total_active}</div>
             <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Total Enrollments</div>
           </div>
         </div>
 
-        {/* 4. Certificates Issued */}
+        {/* 4. Certificates Issued / Revoked */}
         <div className="glass-panel p-5 rounded-3xl border border-white/10 space-y-3">
           <div className="flex items-center justify-between">
             <div className="p-3 bg-amber-500/15 text-amber-400 rounded-2xl">
               <Award size={20} />
             </div>
             <span className="text-[9px] font-black uppercase tracking-wider text-amber-400">
-              {data.certificates.revoked > 0 ? `${data.certificates.revoked} Revoked` : 'Verified'}
+              {data.certificates.revoked > 0 ? `${data.certificates.revoked} Revoked` : '0 Revoked'}
             </span>
           </div>
           <div>
             <div className="text-2xl font-black text-white">{data.certificates.issued}</div>
-            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Certificates Issued</div>
+            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+              Certificates Issued ({data.certificates.revoked} Revoked)
+            </div>
           </div>
         </div>
 
@@ -298,6 +310,143 @@ const AdminDashboard: React.FC = () => {
               {data.attendance.total_sessions} Sessions • {data.attendance.total_logs} Logs
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* DEPARTMENT ATTENDANCE RATES */}
+      <div className="glass-panel p-6 rounded-3xl border border-white/10 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-200 flex items-center gap-2">
+              <Building2 size={16} className="text-indigo-400" /> Attendance Rate by Department
+            </h3>
+            <p className="text-[11px] text-slate-400 font-medium">
+              Aggregated attendance rates calculated across courses in each academic department.
+            </p>
+          </div>
+          <span className="text-[10px] font-mono text-slate-400">
+            {data.attendance_by_department?.length || 0} Departments
+          </span>
+        </div>
+
+        {data.attendance_by_department && data.attendance_by_department.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {data.attendance_by_department.map((dept: any) => {
+              const isGood = dept.attendance_rate >= 75;
+              return (
+                <div key={dept.department_id} className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl space-y-2 hover:border-indigo-500/30 transition-all">
+                  <div className="flex items-center justify-between">
+                    <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 font-mono font-bold text-[10px] rounded-md">
+                      {dept.department_code}
+                    </span>
+                    <span className={`text-xs font-black font-mono px-2 py-0.5 rounded-full ${isGood ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'}`}>
+                      {dept.attendance_rate}%
+                    </span>
+                  </div>
+                  <h4 className="text-xs font-bold text-white mt-1 leading-snug">{dept.department_name}</h4>
+                  <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-slate-400">
+                    <span>{dept.courses_count} Courses</span>
+                    <span>{dept.students_count} Students</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="py-6 text-center text-slate-500 text-xs font-medium bg-black/20 rounded-2xl border border-white/5">
+            No departmental attendance data recorded yet.
+          </div>
+        )}
+      </div>
+
+      {/* TWO COLUMNS: COURSES WITHOUT FACULTY & STUDENTS WITHOUT ENROLLMENTS */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Courses Without Faculty */}
+        <div className="glass-panel p-6 rounded-3xl border border-white/10 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-amber-500/20 text-amber-400 rounded-xl">
+                <BookOpen size={16} />
+              </div>
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-amber-300">
+                  Courses Without Assigned Faculty
+                </h3>
+                <p className="text-[11px] text-slate-400 font-medium">Active courses needing instructor assignment.</p>
+              </div>
+            </div>
+            <span className="px-2.5 py-1 bg-amber-500/20 text-amber-300 text-[10px] font-black rounded-lg border border-amber-500/30">
+              {data.courses_without_faculty ? data.courses_without_faculty.length : 0} Unassigned
+            </span>
+          </div>
+
+          {data.courses_without_faculty && data.courses_without_faculty.length > 0 ? (
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+              {data.courses_without_faculty.map((c: any) => (
+                <div key={c.id} className="p-3 bg-white/[0.02] border border-amber-500/20 rounded-xl flex items-center justify-between text-xs hover:border-amber-500/40 transition-colors">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-indigo-300 font-bold text-[10px]">{c.code}</span>
+                      <span className="font-bold text-white text-xs">{c.name}</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400">{c.department_name} • {c.credits} Credits</span>
+                  </div>
+                  <span className="px-2 py-0.5 bg-amber-500/20 text-amber-400 rounded text-[9px] font-black uppercase tracking-wider shrink-0">
+                    Needs Faculty
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="py-6 text-center text-slate-500 text-xs font-medium bg-black/20 rounded-2xl border border-white/5 flex items-center justify-center gap-2">
+              <CheckCircle2 size={16} className="text-emerald-400" />
+              <span>All active courses have an assigned faculty instructor.</span>
+            </div>
+          )}
+        </div>
+
+        {/* Students Without Enrollments */}
+        <div className="glass-panel p-6 rounded-3xl border border-white/10 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-rose-500/20 text-rose-400 rounded-xl">
+                <Users size={16} />
+              </div>
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-rose-300">
+                  Students Without Active Enrollments
+                </h3>
+                <p className="text-[11px] text-slate-400 font-medium">Registered students not enrolled in any course.</p>
+              </div>
+            </div>
+            <span className="px-2.5 py-1 bg-rose-500/20 text-rose-300 text-[10px] font-black rounded-lg border border-rose-500/30">
+              {data.students_without_enrollments ? data.students_without_enrollments.length : 0} Unenrolled
+            </span>
+          </div>
+
+          {data.students_without_enrollments && data.students_without_enrollments.length > 0 ? (
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+              {data.students_without_enrollments.map((st: any) => (
+                <div key={st.id} className="p-3 bg-white/[0.02] border border-rose-500/20 rounded-xl flex items-center justify-between text-xs hover:border-rose-500/40 transition-colors">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-white text-xs">{st.name}</span>
+                      <span className="font-mono text-slate-400 text-[10px]">({st.enrollment_no})</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400">{st.email} • {st.department_name}</span>
+                  </div>
+                  <span className="px-2 py-0.5 bg-rose-500/20 text-rose-400 rounded text-[9px] font-black uppercase tracking-wider shrink-0">
+                    0 Enrollments
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="py-6 text-center text-slate-500 text-xs font-medium bg-black/20 rounded-2xl border border-white/5 flex items-center justify-center gap-2">
+              <CheckCircle2 size={16} className="text-emerald-400" />
+              <span>All active students are enrolled in at least one course.</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -334,22 +483,26 @@ const AdminDashboard: React.FC = () => {
           {/* Audit Logs Table */}
           <div className="pt-2">
             <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-3">Recent System Audit Events</h4>
-            {data.recent_audit_logs.length === 0 ? (
+            {(!data.recent_audit_events || data.recent_audit_events.length === 0) && (!data.recent_audit_logs || data.recent_audit_logs.length === 0) ? (
               <div className="py-6 text-center text-slate-500 text-xs font-medium">
                 No system audit events recorded yet.
               </div>
             ) : (
               <div className="space-y-2">
-                {data.recent_audit_logs.map((log) => (
+                {(data.recent_audit_events && data.recent_audit_events.length > 0 ? data.recent_audit_events : data.recent_audit_logs).map((log: any) => (
                   <div key={log.id} className="p-3 bg-black/40 border border-white/5 rounded-xl flex items-center justify-between text-xs">
                     <div className="flex items-center gap-3">
                       <div className="w-2 h-2 rounded-full bg-emerald-400"></div>
                       <div>
                         <span className="font-bold text-white">{log.action}</span>
+                        <span className="text-indigo-300 font-mono text-[10px] ml-1">[{log.resource_type || 'SYS'}]</span>
                         <span className="text-slate-400 text-[10px] ml-2">by {log.actor_name}</span>
+                        {log.details && (
+                          <div className="text-[10px] text-slate-500 truncate max-w-sm">{log.details}</div>
+                        )}
                       </div>
                     </div>
-                    <span className="text-slate-400 font-mono text-[10px]">{log.time}</span>
+                    <span className="text-slate-400 font-mono text-[10px] shrink-0">{log.time}</span>
                   </div>
                 ))}
               </div>

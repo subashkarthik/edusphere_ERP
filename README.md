@@ -125,19 +125,24 @@ npm run dev
 
 ---
 
-## 🔑 Demo Accounts
+## 🔑 Initial Bootstrap Admin & Account Setup
 
-| Role | Email | Password | Details |
-| :--- | :--- | :--- | :--- |
-| **Admin** | `admin@edusphere.edu.in` | `Admin@123` | Full administrative control, user registry, audit logs |
-| **Faculty 1** | `faculty1@edusphere.edu.in` | `Faculty@123` | Dr. Alan Turing — Cloud Computing & ML courses |
-| **Faculty 2** | `faculty2@edusphere.edu.in` | `Faculty@123` | Dr. Ada Lovelace — Data Structures course |
-| **Student 1** | `student1@edusphere.edu.in` | `Student@123` | Alice Smith — **100% Certified** (100% Attn, 97.5% Score) |
-| **Student 2** | `student2@edusphere.edu.in` | `Student@123` | Bob Johnson — **Certified** (87.5% Attn, 85.6% Score) |
-| **Student 3** | `student3@edusphere.edu.in` | `Student@123` | Charlie Brown — **Ineligible** (50% Attendance < 75%) |
-| **Student 4** | `student4@edusphere.edu.in` | `Student@123` | Diana Prince — **Ineligible** (39% Assessment Score < 50%) |
-| **Student 5** | `student5@edusphere.edu.in` | `Student@123` | Evan Wright — **Ineligible** (25% Course Progress < 100%) |
-| **Students 6-10** | `student6@edusphere.edu.in` ... | `Student@123` | Active enrolled students with varied progress |
+EduSphere starts with an empty database. The initial administrator account is created securely via the CLI:
+
+```bash
+# Bootstrap the first administrator (prompts for password, min 12 characters)
+cd server
+python -m app.cli create-admin --email admin@institution.edu --name "System Administrator"
+```
+
+> **Security Guarantee:** No default administrative credentials exist in code, configuration, or containers.
+
+### Optional Demo Seeding (Demo Environment Only)
+To populate demo curriculum and users for non-production demonstration:
+```bash
+# Refuses to run unless ENV=demo and the database name ends with '_demo'
+ENV=demo python -m app.cli seed-demo
+```
 
 ---
 

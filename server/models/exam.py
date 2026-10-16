@@ -70,6 +70,7 @@ class Quiz(Base):
     passing_percentage: Mapped[float] = mapped_column(Float, default=60.0)
     total_marks: Mapped[int] = mapped_column(Integer, default=100)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_results_published: Mapped[bool] = mapped_column(Boolean, default=False)
     created_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
     org_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, default="org-edusphere")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

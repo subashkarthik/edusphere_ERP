@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Enum as SAEnum, Text, Float, UniqueConstraint
+from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Enum as SAEnum, Text, Float, UniqueConstraint, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import Base
 
@@ -34,6 +34,7 @@ class Course(Base):
     faculty_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True, index=True)
     semester: Mapped[int] = mapped_column(Integer, default=7)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    syllabus_topics: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
     schedule: Mapped[str | None] = mapped_column(String(100), nullable=True)
     max_students: Mapped[int] = mapped_column(Integer, default=120)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

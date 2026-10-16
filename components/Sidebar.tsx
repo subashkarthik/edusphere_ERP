@@ -88,16 +88,6 @@ const Sidebar: React.FC<SidebarProps> = ({
               <span className="text-xs font-bold tracking-tight">Sign Out</span>
             </button>
           </div>
-          
-          <div className="mt-6 px-4 py-4 glass rounded-2xl">
-            <div className="flex items-center gap-3 mb-1">
-              <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]"></div>
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">EduSphere ERP</span>
-            </div>
-            <p className="text-[9px] text-slate-500 font-medium leading-tight">
-              5 Pillars Production LMS
-            </p>
-          </div>
         </div>
       </aside>
     </>

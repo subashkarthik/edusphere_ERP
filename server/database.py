@@ -63,15 +63,47 @@ def _run_schema_migrations():
             if not is_sqlite:
                 conn.execute(text("ALTER TABLE certificates ADD COLUMN IF NOT EXISTS progress_pct FLOAT DEFAULT 0.0;"))
                 conn.execute(text("ALTER TABLE certificate_settings ADD COLUMN IF NOT EXISTS min_progress_pct FLOAT DEFAULT 100.0;"))
+                conn.execute(text("ALTER TABLE certificates ADD COLUMN IF NOT EXISTS is_override BOOLEAN DEFAULT FALSE;"))
+                conn.execute(text("ALTER TABLE certificates ADD COLUMN IF NOT EXISTS override_reason VARCHAR(500);"))
+                conn.execute(text("ALTER TABLE certificates ADD COLUMN IF NOT EXISTS override_by_id VARCHAR(36);"))
+                conn.execute(text("ALTER TABLE assignments ADD COLUMN IF NOT EXISTS is_results_published BOOLEAN DEFAULT FALSE;"))
+                conn.execute(text("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS is_results_published BOOLEAN DEFAULT FALSE;"))
+                conn.execute(text("ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS period VARCHAR(50);"))
+                try:
+                    conn.execute(text("ALTER TABLE courses ALTER COLUMN department_id DROP NOT NULL;"))
+                except Exception:
+                    pass
+                try:
+                    conn.execute(text("ALTER TABLE audit_logs ALTER COLUMN resource_type DROP NOT NULL;"))
+                except Exception:
+                    pass
+                try:
+                    conn.execute(text("ALTER TABLE courses ADD COLUMN IF NOT EXISTS syllabus_topics JSON DEFAULT '[]';"))
+                except Exception:
+                    pass
+                try:
+                    conn.execute(text("ALTER TABLE modules ADD COLUMN IF NOT EXISTS is_published BOOLEAN DEFAULT TRUE;"))
+                    conn.execute(text("ALTER TABLE lessons ADD COLUMN IF NOT EXISTS is_published BOOLEAN DEFAULT TRUE;"))
+                except Exception:
+                    pass
             else:
-                try:
-                    conn.execute(text("ALTER TABLE certificates ADD COLUMN progress_pct FLOAT DEFAULT 0.0;"))
-                except Exception:
-                    pass
-                try:
-                    conn.execute(text("ALTER TABLE certificate_settings ADD COLUMN min_progress_pct FLOAT DEFAULT 100.0;"))
-                except Exception:
-                    pass
+                for stmt in [
+                    "ALTER TABLE certificates ADD COLUMN progress_pct FLOAT DEFAULT 0.0;",
+                    "ALTER TABLE certificate_settings ADD COLUMN min_progress_pct FLOAT DEFAULT 100.0;",
+                    "ALTER TABLE certificates ADD COLUMN is_override BOOLEAN DEFAULT 0;",
+                    "ALTER TABLE certificates ADD COLUMN override_reason VARCHAR(500);",
+                    "ALTER TABLE certificates ADD COLUMN override_by_id VARCHAR(36);",
+                    "ALTER TABLE assignments ADD COLUMN is_results_published BOOLEAN DEFAULT 0;",
+                    "ALTER TABLE quizzes ADD COLUMN is_results_published BOOLEAN DEFAULT 0;",
+                    "ALTER TABLE attendance_sessions ADD COLUMN period VARCHAR(50);",
+                    "ALTER TABLE courses ADD COLUMN syllabus_topics JSON DEFAULT '[]';",
+                    "ALTER TABLE modules ADD COLUMN is_published BOOLEAN DEFAULT 1;",
+                    "ALTER TABLE lessons ADD COLUMN is_published BOOLEAN DEFAULT 1;",
+                ]:
+                    try:
+                        conn.execute(text(stmt))
+                    except Exception:
+                        pass
     except Exception as e:
         print(f"[DB MIGRATION NOTE] {e}")
 

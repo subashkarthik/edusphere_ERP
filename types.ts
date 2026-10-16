@@ -20,6 +20,10 @@ export interface UserProfile {
   designation?: string;
   org_id?: string;
   campus?: string;
+  login_id?: string;
+  must_change_password?: boolean;
+  is_active?: boolean;
+  last_seen?: string;
 }
 
 export interface NavItem {
@@ -116,10 +120,10 @@ export interface CertificateRecord {
   completed_lessons?: number;
   progress_pct?: number;
   progress_met?: boolean;
-  attendance_pct: number;
+  attendance_pct: number | null;
   attendance_met?: boolean;
   attendance_threshold?: number;
-  assessment_pct: number;
+  assessment_pct: number | null;
   assessment_met?: boolean;
   assessment_threshold?: number;
   is_eligible?: boolean;

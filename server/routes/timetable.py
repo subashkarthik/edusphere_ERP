@@ -6,7 +6,6 @@ from models.user import User, UserRole
 from models.academic import TimetableEntry, Enrollment, Course, EnrollmentStatus
 from schemas.schemas import TimetableCreate, TimetableResponse
 from middleware.auth import get_current_user, require_roles
-from access_db import get_full_timetable
 
 router = APIRouter(prefix="/api/timetable", tags=["Timetable"])
 

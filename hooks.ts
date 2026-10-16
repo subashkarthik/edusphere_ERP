@@ -46,9 +46,7 @@ export function useApi<T>(
     } catch (err: any) {
       console.warn('[API]', err.message);
       setError(err.message || 'Failed to fetch data');
-      if (fallback !== undefined) {
-        setData(fallback);
-      }
+      setData(null);
     } finally {
       setLoading(false);
     }

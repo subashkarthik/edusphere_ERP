@@ -239,7 +239,7 @@ const CertificationsModule: React.FC<CertificationsModuleProps> = ({ user }) => 
                 const assessMet = cert.assessment_pct >= (cert.assessment_threshold ?? settings.min_assessment_pct);
                 const progMet = (cert.progress_pct ?? 0) >= (settings.min_progress_pct ?? 100);
                 const isFullyEligible = cert.is_eligible ?? (attnMet && assessMet && progMet);
-                const isIssued = cert.eligibility_status === 'ISSUED';
+                const isIssued = Boolean(cert.has_certificate && cert.eligibility_status === 'ISSUED');
                 const isRevoked = cert.eligibility_status === 'REVOKED';
 
                 return (
@@ -290,16 +290,16 @@ const CertificationsModule: React.FC<CertificationsModuleProps> = ({ user }) => 
                       {/* 1. Attendance */}
                       <div className="flex items-center justify-between">
                         <span className="text-slate-300 font-medium">Attendance Requirement (&ge;{cert.attendance_threshold ?? settings.min_attendance_pct}%):</span>
-                        <span className={`font-mono font-bold inline-flex items-center gap-1 ${attnMet ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {cert.attendance_pct}% {attnMet ? <Check size={14} /> : <XCircle size={14} />}
+                        <span className={`font-mono font-bold inline-flex items-center gap-1 ${cert.attendance_pct === null ? 'text-slate-400' : attnMet ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {cert.attendance_pct !== null && cert.attendance_pct !== undefined ? `${cert.attendance_pct}%` : 'No classes held yet'} {cert.attendance_pct !== null && (attnMet ? <Check size={14} /> : <XCircle size={14} />)}
                         </span>
                       </div>
 
                       {/* 2. Assessment Score */}
                       <div className="flex items-center justify-between">
                         <span className="text-slate-300 font-medium">Assessment Score (&ge;{cert.assessment_threshold ?? settings.min_assessment_pct}%):</span>
-                        <span className={`font-mono font-bold inline-flex items-center gap-1 ${assessMet ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {cert.assessment_pct}% {assessMet ? <Check size={14} /> : <XCircle size={14} />}
+                        <span className={`font-mono font-bold inline-flex items-center gap-1 ${cert.assessment_pct === null ? 'text-slate-400' : assessMet ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {cert.assessment_pct !== null && cert.assessment_pct !== undefined ? `${cert.assessment_pct}%` : 'Pending'} {cert.assessment_pct !== null && (assessMet ? <Check size={14} /> : <XCircle size={14} />)}
                         </span>
                       </div>
 
@@ -340,12 +340,30 @@ const CertificationsModule: React.FC<CertificationsModuleProps> = ({ user }) => 
                             <ExternalLink size={14} /> Verify
                           </a>
                         </>
+                      ) : isFullyEligible && !isRevoked ? (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await certificatesApi.issueCertificate(cert.course_id);
+                              setActionSuccess(`Certificate for ${cert.course_name} issued successfully!`);
+                              fetchCertificates();
+                            } catch (err: any) {
+                              setActionError(err.message || 'Failed to issue certificate.');
+                            }
+                          }}
+                          className="w-full px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
+                        >
+                          <Award size={15} /> Claim Certificate (Eligible)
+                        </button>
                       ) : (
                         <button
                           disabled
-                          className="w-full px-4 py-2.5 bg-white/5 border border-white/10 text-slate-400 rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-not-allowed"
+                          className="w-full px-4 py-2.5 bg-white/5 border border-white/10 text-rose-300 rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-not-allowed"
                         >
-                          <Lock size={14} /> Requirements Pending (Not Eligible)
+                          <Lock size={14} className="text-rose-400" />
+                          {cert.reasons && cert.reasons.length > 0
+                            ? cert.reasons[0]
+                            : "Not eligible: academic requirements pending"}
                         </button>
                       )}
                     </div>
@@ -468,7 +486,29 @@ const CertificationsModule: React.FC<CertificationsModuleProps> = ({ user }) => 
                                   <ExternalLink size={14} />
                                 </a>
                               )}
-                              {isAdmin && !isRevoked && (
+                              {(isAdmin || isFaculty) && !isIssued && !isRevoked && (
+                                <button
+                                  onClick={async () => {
+                                    const reason = window.prompt(`Enter written justification reason for manual certificate override for ${cert.student_name}:`);
+                                    if (!reason || reason.trim().length < 5) {
+                                      if (reason !== null) alert("A valid written justification reason (minimum 5 characters) is required.");
+                                      return;
+                                    }
+                                    try {
+                                      await certificatesApi.overrideCertificate(cert.user_id, cert.course_id, reason.trim());
+                                      setActionSuccess(`Manual override recorded and certificate issued for ${cert.student_name}.`);
+                                      fetchCertificates();
+                                    } catch (e: any) {
+                                      setActionError(e.message || "Failed to override certificate.");
+                                    }
+                                  }}
+                                  className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded-lg text-[10px] font-black uppercase transition-all"
+                                  title="Manual Override with Written Justification"
+                                >
+                                  Override
+                                </button>
+                              )}
+                              {isAdmin && !isRevoked && isIssued && (
                                 <button
                                   onClick={() => handleRevoke(cert.id, cert.certificate_code)}
                                   className="px-2.5 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 rounded-lg text-[10px] font-black uppercase transition-all"

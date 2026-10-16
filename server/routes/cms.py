@@ -21,15 +21,28 @@ async def create_course(
     if current_user.role not in [UserRole.FACULTY, UserRole.ADMIN]:
         raise HTTPException(status_code=403, detail="Only faculty or admins can create courses")
     
+    desc = (course_data.get("description") or "").strip()
+    if len(desc) < 30:
+        raise HTTPException(status_code=400, detail="Description must be at least 30 characters")
+
+    title = course_data.get("title") or course_data.get("name")
+    name = course_data.get("name") or title
+    topics = course_data.get("syllabus_topics", [])
+    if isinstance(topics, list):
+        topics = [t.strip() for t in topics if isinstance(t, str) and t.strip()]
+
     new_course = Course(
         org_id=current_user.org_id,
         code=course_data.get("code"),
-        name=course_data.get("name"),
-        description=course_data.get("description"),
+        name=name,
+        title=title,
+        description=desc,
         credits=course_data.get("credits", 3),
         department_id=course_data.get("department_id"),
-        faculty_id=current_user.id,
-        is_active=course_data.get("publish", False)
+        faculty_id=current_user.id if current_user.role == UserRole.FACULTY else (course_data.get("faculty_id") or current_user.id),
+        semester=course_data.get("semester", 7),
+        syllabus_topics=topics,
+        is_active=course_data.get("publish", True)
     )
     
     db.add(new_course)
@@ -105,9 +118,11 @@ async def get_faculty_inventory(
             "org_id": c.org_id,
             "code": c.code,
             "name": c.name,
+            "title": c.title or c.name,
             "credits": c.credits,
             "department_id": c.department_id,
             "faculty_id": c.faculty_id,
+            "faculty_name": c.faculty.name if c.faculty else None,
             "semester": c.semester,
             "description": c.description,
             "schedule": c.schedule,
@@ -115,6 +130,7 @@ async def get_faculty_inventory(
             "is_active": c.is_active,
             "approval_status": c.approval_status,
             "enrolled_count": enrolled_count,
+            "syllabus_topics": c.syllabus_topics or [],
         })
     return result
 
@@ -276,7 +292,8 @@ async def add_module(
         course_id=course_id,
         title=module_data.get("title"),
         description=module_data.get("description"),
-        order_index=module_data.get("order_index", 0)
+        order_index=module_data.get("order_index", 0),
+        is_published=module_data.get("is_published", True),
     )
     db.add(new_module)
     db.commit()
@@ -307,10 +324,12 @@ async def add_lesson(
         org_id=current_user.org_id,
         module_id=module_id,
         title=lesson_data.get("title"),
-        content_type=lesson_data.get("content_type"),
+        content_type=lesson_data.get("content_type", "VIDEO"),
         content_url=lesson_data.get("content_url"),
         content_body=lesson_data.get("content_body"),
-        order_index=lesson_data.get("order_index", 0)
+        duration_minutes=lesson_data.get("duration_minutes", 0),
+        order_index=lesson_data.get("order_index", 0),
+        is_published=lesson_data.get("is_published", True),
     )
     db.add(new_lesson)
     db.commit()

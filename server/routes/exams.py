@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 from database import get_db
 from models.user import User, UserRole
@@ -8,6 +8,12 @@ from models.academic import Course, Enrollment, EnrollmentStatus
 from models.exam import ExamSchedule, ExamResult, ExamType
 from schemas.schemas import ExamScheduleCreate, ExamResultBulkCreate, TranscriptResponse
 from middleware.auth import get_current_user, require_roles
+from middleware.scoping import (
+    verify_course_access,
+    verify_quiz_access,
+    verify_org_access,
+    verify_user_access,
+)
 
 router = APIRouter(prefix="/api/exams", tags=["Exams & Results"])
 
@@ -17,7 +23,9 @@ def list_exam_schedules(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List upcoming exam schedules, filtered by user role."""
+    """List upcoming exam schedules, filtered by user role and org boundary."""
+    query = db.query(ExamSchedule).filter(ExamSchedule.org_id == current_user.org_id)
+
     if current_user.role == UserRole.STUDENT:
         enrolled_course_ids = [
             e.course_id for e in db.query(Enrollment).filter(
@@ -25,12 +33,12 @@ def list_exam_schedules(
                 Enrollment.status == EnrollmentStatus.ACTIVE,
             ).all()
         ]
-        schedules = db.query(ExamSchedule).filter(ExamSchedule.course_id.in_(enrolled_course_ids)).order_by(ExamSchedule.exam_date).all()
+        schedules = query.filter(ExamSchedule.course_id.in_(enrolled_course_ids)).order_by(ExamSchedule.exam_date).all()
     elif current_user.role == UserRole.FACULTY:
-        taught_ids = [c.id for c in db.query(Course).filter(Course.faculty_id == current_user.id).all()]
-        schedules = db.query(ExamSchedule).filter(ExamSchedule.course_id.in_(taught_ids)).order_by(ExamSchedule.exam_date).all()
+        taught_ids = [c.id for c in db.query(Course).filter(Course.faculty_id == current_user.id, Course.org_id == current_user.org_id).all()]
+        schedules = query.filter(ExamSchedule.course_id.in_(taught_ids)).order_by(ExamSchedule.exam_date).all()
     else:
-        schedules = db.query(ExamSchedule).order_by(ExamSchedule.exam_date).all()
+        schedules = query.order_by(ExamSchedule.exam_date).all()
 
     return [
         {
@@ -54,10 +62,8 @@ def create_exam_schedule(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FACULTY])),
 ):
-    """Create an exam schedule. Admin or Faculty only."""
-    course = db.query(Course).filter(Course.id == request.course_id).first()
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
+    """Create an exam schedule. Admin or Faculty (for taught courses) only."""
+    course = verify_course_access(request.course_id, current_user, db, action="manage")
 
     try:
         exam_type = ExamType(request.exam_type)
@@ -65,13 +71,14 @@ def create_exam_schedule(
         raise HTTPException(status_code=400, detail=f"Invalid exam type: {request.exam_type}")
 
     schedule = ExamSchedule(
-        course_id=request.course_id,
+        course_id=course.id,
         exam_type=exam_type,
         title=request.title,
         exam_date=datetime.fromisoformat(request.exam_date),
         max_marks=request.max_marks,
         duration_minutes=request.duration_minutes,
         venue=request.venue,
+        org_id=current_user.org_id,
     )
     db.add(schedule)
     db.commit()
@@ -82,17 +89,20 @@ def create_exam_schedule(
 
 @router.get("/results")
 def get_results(
+    limit: int = Query(50, le=200),
+    offset: int = Query(0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get exam results for the current student or all (faculty/admin)."""
+    """Get exam results with pagination scoped to student, faculty course, or admin org."""
+    query = db.query(ExamResult).filter(ExamResult.org_id == current_user.org_id, ExamResult.is_published == True)
+
     if current_user.role == UserRole.STUDENT:
-        results = db.query(ExamResult).filter(
-            ExamResult.student_id == current_user.id,
-            ExamResult.is_published == True,
-        ).all()
-    else:
-        results = db.query(ExamResult).filter(ExamResult.is_published == True).all()
+        query = query.filter(ExamResult.student_id == current_user.id)
+    elif current_user.role == UserRole.FACULTY:
+        query = query.join(ExamSchedule).join(Course).filter(Course.faculty_id == current_user.id)
+
+    results = query.offset(offset).limit(limit).all()
 
     return [
         {
@@ -116,10 +126,12 @@ def upload_bulk_results(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles([UserRole.FACULTY, UserRole.ADMIN])),
 ):
-    """Upload exam results in batch. Faculty/Admin only."""
+    """Upload exam results in batch. Faculty (for taught courses) or Admin only."""
     exam = db.query(ExamSchedule).filter(ExamSchedule.id == request.exam_id).first()
     if not exam:
         raise HTTPException(status_code=404, detail="Exam schedule not found")
+
+    course = verify_course_access(exam.course_id, current_user, db, action="manage")
 
     count = 0
     for r in request.results:
@@ -131,6 +143,7 @@ def upload_bulk_results(
             grade=r.grade or _compute_grade(r.marks_obtained, exam.max_marks),
             remarks=r.remarks,
             is_published=True,
+            org_id=current_user.org_id,
         )
         db.add(result)
         count += 1
@@ -215,7 +228,8 @@ class QuizCreate(BaseModel):
     description: str | None = None
     time_limit_minutes: int = 15
     passing_percentage: float = 60.0
-    questions: List[QuizQuestionCreate]
+    total_marks: Optional[int] = 50
+    questions: Optional[List[QuizQuestionCreate]] = []
 
 class QuizSubmitSchema(BaseModel):
     answers: dict  # { question_id: "A" | "B" | "C" | "D" }
@@ -227,7 +241,9 @@ def list_quizzes(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List available online quizzes filtered by user role and course enrollment."""
+    """List available online quizzes filtered by user role and course enrollment in current org."""
+    query = db.query(Quiz).filter(Quiz.org_id == current_user.org_id, Quiz.is_active == True)
+
     if current_user.role == UserRole.STUDENT:
         enrolled_course_ids = [
             e.course_id
@@ -236,25 +252,14 @@ def list_quizzes(
                 Enrollment.status == EnrollmentStatus.ACTIVE,
             ).all()
         ]
-        quizzes = (
-            db.query(Quiz)
-            .filter(Quiz.is_active == True, Quiz.course_id.in_(enrolled_course_ids))
-            .order_by(Quiz.created_at.desc())
-            .all()
-        )
+        quizzes = query.filter(Quiz.course_id.in_(enrolled_course_ids)).order_by(Quiz.created_at.desc()).all()
     elif current_user.role == UserRole.FACULTY:
-        taught_ids = [c.id for c in db.query(Course).filter(Course.faculty_id == current_user.id).all()]
-        quizzes = (
-            db.query(Quiz)
-            .filter(
-                Quiz.is_active == True,
-                (Quiz.course_id.in_(taught_ids) | (Quiz.created_by == current_user.id)),
-            )
-            .order_by(Quiz.created_at.desc())
-            .all()
-        )
+        taught_ids = [c.id for c in db.query(Course).filter(Course.faculty_id == current_user.id, Course.org_id == current_user.org_id).all()]
+        quizzes = query.filter(
+            (Quiz.course_id.in_(taught_ids) | (Quiz.created_by == current_user.id))
+        ).order_by(Quiz.created_at.desc()).all()
     else:
-        quizzes = db.query(Quiz).filter(Quiz.is_active == True).order_by(Quiz.created_at.desc()).all()
+        quizzes = query.order_by(Quiz.created_at.desc()).all()
 
     # User attempts map for this student/user
     user_attempts = {
@@ -265,6 +270,9 @@ def list_quizzes(
     result = []
     for q in quizzes:
         attempt = user_attempts.get(q.id)
+        is_published = getattr(q, "is_results_published", False)
+        show_scores = is_published or (current_user.role in [UserRole.FACULTY, UserRole.ADMIN])
+
         result.append({
             "id": q.id,
             "course_id": q.course_id,
@@ -277,9 +285,10 @@ def list_quizzes(
             "total_questions": len(q.questions),
             "total_marks": sum(qn.marks for qn in q.questions) or q.total_marks,
             "attempted": attempt is not None,
-            "best_score": attempt.score if attempt else None,
-            "percentage": attempt.percentage if attempt else None,
-            "passed": attempt.passed if attempt else None,
+            "is_results_published": is_published,
+            "best_score": (attempt.score if attempt else None) if show_scores else None,
+            "percentage": (attempt.percentage if attempt else None) if show_scores else None,
+            "passed": (attempt.passed if attempt else None) if show_scores else None,
             "attempts_count": len(q.attempts),
             "created_at": str(q.created_at),
         })
@@ -293,19 +302,8 @@ def get_quiz_details(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Fetch quiz details and questions for taking the test."""
-    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
-    if not quiz:
-        raise HTTPException(status_code=404, detail="Quiz not found")
-
-    if current_user.role == UserRole.STUDENT:
-        is_enrolled = db.query(Enrollment).filter(
-            Enrollment.student_id == current_user.id,
-            Enrollment.course_id == quiz.course_id,
-            Enrollment.status == EnrollmentStatus.ACTIVE,
-        ).first() is not None
-        if not is_enrolled:
-            raise HTTPException(status_code=403, detail="You are not enrolled in the course for this quiz")
+    """Fetch quiz details and questions with central scoping enforcement."""
+    quiz = verify_quiz_access(quiz_id, current_user, db, action="take" if current_user.role == UserRole.STUDENT else "read")
 
     questions = db.query(QuizQuestion).filter(QuizQuestion.quiz_id == quiz_id).order_by(QuizQuestion.order_num).all()
 
@@ -342,23 +340,21 @@ def create_quiz(
     current_user: User = Depends(require_roles([UserRole.FACULTY, UserRole.ADMIN])),
 ):
     """Create a new online quiz with questions. Faculty/Admin only."""
-    course = db.query(Course).filter(Course.id == payload.course_id).first()
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
+    course = verify_course_access(payload.course_id, current_user, db, action="manage")
 
     if not payload.questions:
         raise HTTPException(status_code=400, detail="Quiz must contain at least one question")
 
     total_marks = sum(q.marks for q in payload.questions)
     quiz = Quiz(
-        course_id=payload.course_id,
+        course_id=course.id,
         title=payload.title,
         description=payload.description,
         time_limit_minutes=payload.time_limit_minutes,
         passing_percentage=payload.passing_percentage,
         total_marks=total_marks,
         created_by=current_user.id,
-        org_id=getattr(current_user, "org_id", "org-edusphere") or "org-edusphere",
+        org_id=current_user.org_id,
     )
     db.add(quiz)
     db.commit()
@@ -399,9 +395,7 @@ def submit_quiz(
     current_user: User = Depends(get_current_user),
 ):
     """Submit quiz answers, auto-grade on backend, and return result summary with question review."""
-    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
-    if not quiz:
-        raise HTTPException(status_code=404, detail="Quiz not found")
+    quiz = verify_quiz_access(quiz_id, current_user, db, action="take")
 
     questions = db.query(QuizQuestion).filter(QuizQuestion.quiz_id == quiz_id).order_by(QuizQuestion.order_num).all()
     if not questions:
@@ -439,7 +433,7 @@ def submit_quiz(
     passed = percentage >= quiz.passing_percentage
 
     attempt = QuizAttempt(
-        quiz_id=quiz_id,
+        quiz_id=quiz.id,
         student_id=current_user.id,
         score=score,
         percentage=percentage,
@@ -447,23 +441,44 @@ def submit_quiz(
         total_questions=total_questions,
         correct_answers=correct_answers,
         tab_switch_violations=payload.tab_switch_violations,
-        org_id=getattr(current_user, "org_id", "org-edusphere") or "org-edusphere",
+        org_id=current_user.org_id,
     )
     db.add(attempt)
     db.commit()
 
+    is_published = getattr(quiz, "is_results_published", False)
+
     return {
-        "message": "Quiz submitted successfully",
+        "message": "Quiz submitted successfully" if is_published else "Quiz submitted successfully. Results will be visible once published by faculty.",
         "quiz_id": quiz.id,
         "quiz_title": quiz.title,
-        "score": score,
+        "is_results_published": is_published,
+        "score": score if is_published else None,
         "total_marks": total_marks,
-        "percentage": percentage,
-        "passed": passed,
-        "correct_answers": correct_answers,
+        "percentage": percentage if is_published else None,
+        "passed": passed if is_published else None,
+        "correct_answers": correct_answers if is_published else None,
         "total_questions": total_questions,
         "tab_switch_violations": payload.tab_switch_violations,
-        "review": review_details,
+        "review": review_details if is_published else None,
+    }
+
+
+@router.post("/quizzes/{quiz_id}/publish-results")
+def publish_quiz_results(
+    quiz_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.FACULTY, UserRole.ADMIN])),
+):
+    """Faculty publishes quiz results making marks and reviews visible to students."""
+    quiz = verify_quiz_access(quiz_id, current_user, db, action="manage")
+    quiz.is_results_published = True
+    db.commit()
+
+    return {
+        "message": f"Results for quiz '{quiz.title}' published successfully. Marks are now visible to students.",
+        "quiz_id": quiz.id,
+        "is_results_published": True,
     }
 
 
@@ -474,9 +489,7 @@ def get_quiz_attempts(
     current_user: User = Depends(require_roles([UserRole.FACULTY, UserRole.ADMIN])),
 ):
     """Get all student attempts and results for a specific quiz. Faculty/Admin only."""
-    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
-    if not quiz:
-        raise HTTPException(status_code=404, detail="Quiz not found")
+    quiz = verify_quiz_access(quiz_id, current_user, db, action="view_attempts")
 
     attempts = (
         db.query(QuizAttempt)

@@ -8,7 +8,6 @@ import { UserProfile, UserRole } from '../types';
 import GlobalSearch from './GlobalSearch';
 import { useSocket } from '../hooks/useSocket';
 import { notificationsApi, AppNotification } from '../services/api';
-import InstallPWAButton from './InstallPWAButton';
 
 interface HeaderProps {
   user: UserProfile;
@@ -158,20 +157,8 @@ const Header: React.FC<HeaderProps> = ({ user, onOpenMenu }) => {
           <div className="w-5 h-0.5 bg-slate-300 rounded-full"></div>
         </button>
 
-        <div className="hidden md:flex items-center gap-4 text-slate-300">
-          <div className="flex items-center gap-2 px-3 py-1.5 badge-emerald rounded-lg">
-            <ShieldCheck size={14} />
-            <span className="text-[10px] font-black uppercase tracking-widest">Session Verified</span>
-          </div>
-          <div className="w-[1px] h-4 bg-white/10"></div>
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-indigo-300">
-            <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-pulse"></div>
-            <span className="text-[10px] font-black uppercase tracking-widest">{pulse?.active_users || 1} LIVE</span>
-          </div>
-        </div>
-
         {/* Quick Search */}
-        <div className="relative max-w-md w-full hidden md:block ml-2" onClick={() => setIsSearchOpen(true)}>
+        <div className="relative max-w-md w-full hidden md:block" onClick={() => setIsSearchOpen(true)}>
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
           <div className="w-full glass-input rounded-xl pl-10 pr-4 py-2 text-xs font-medium transition-all flex items-center justify-between cursor-text">
             <span className="text-slate-400">Search courses, attendance, quizzes...</span>
@@ -184,10 +171,6 @@ const Header: React.FC<HeaderProps> = ({ user, onOpenMenu }) => {
 
       {/* User Actions */}
       <div className="flex items-center gap-2 md:gap-4">
-        
-        {/* PWA Install Button */}
-        <InstallPWAButton />
-
         {/* Role Badge Indicator */}
         <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest hidden sm:inline-block ${
           user.role === UserRole.ADMIN ? 'bg-rose-500/20 border border-rose-500/30 text-rose-300' :
@@ -314,7 +297,9 @@ const Header: React.FC<HeaderProps> = ({ user, onOpenMenu }) => {
               alt={user.name} 
               className="w-9 h-9 rounded-xl object-cover ring-2 ring-white/10 group-hover:ring-indigo-500/30 transition-all shadow-sm"
             />
-            <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-400 border-2 border-[#050816] rounded-full shadow-[0_0_6px_rgba(52,211,153,0.6)]"></div>
+            {user.is_active && (
+              <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-400 border-2 border-[#050816] rounded-full shadow-[0_0_6px_rgba(52,211,153,0.6)]"></div>
+            )}
           </div>
         </div>
       </div>

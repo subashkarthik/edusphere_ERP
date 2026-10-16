@@ -151,22 +151,21 @@ export const authApi = {
         designation: string | null;
         phone?: string | null;
         org_id?: string;
+        login_id?: string;
+        must_change_password?: boolean;
+        semester?: number | null;
+        section?: string | null;
       };
     }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ identifier, email: identifier, password }),
     }),
 
-  registerPublic: (data: any) =>
-    apiFetch<any>('/auth/register-public', {
+  changePassword: (data: { current_password?: string; new_password: string }, token?: string) =>
+    apiFetch<any>('/auth/change-password', {
       method: 'POST',
       body: JSON.stringify(data),
-    }),
-
-  register: (data: any) =>
-    apiFetch<any>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(data),
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
     }),
 
   getMe: () => apiFetch<any>('/auth/me'),
@@ -207,10 +206,37 @@ export const subjectApi = {
 
 export const coursesApi = {
   list: (all: boolean = false) => apiFetch<any[]>(all ? '/courses/?all=true' : '/courses/'),
+  get: (courseId: string) => apiFetch<any>(`/courses/${courseId}`),
   myEnrollments: () => apiFetch<any[]>('/courses/my-enrollments'),
+  create: (data: any) => apiFetch<any>('/courses/', { method: 'POST', body: JSON.stringify(data) }),
+  update: (courseId: string, data: any) => apiFetch<any>(`/courses/${courseId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (courseId: string) => apiFetch<any>(`/courses/${courseId}`, { method: 'DELETE' }),
   selfEnroll: (courseId: string) => apiFetch<any>(`/courses/${courseId}/self-enroll`, { method: 'POST' }),
   getEnrolledStudents: (courseId: string) => apiFetch<any>(`/courses/${courseId}/students`),
   materials: (id: string) => apiFetch<any[]>(`/courses/${id}/materials`),
+  uploadFile: async (courseId: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const token = getAccessToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE}/courses/${courseId}/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Upload failed' }));
+      throw new Error(err.detail || 'Upload failed');
+    }
+    return res.json();
+  },
+  addModule: (courseId: string, data: any) => apiFetch<any>(`/courses/${courseId}/modules`, { method: 'POST', body: JSON.stringify(data) }),
+  updateModule: (moduleId: string, data: any) => apiFetch<any>(`/courses/modules/${moduleId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteModule: (moduleId: string) => apiFetch<any>(`/courses/modules/${moduleId}`, { method: 'DELETE' }),
+  addLesson: (moduleId: string, data: any) => apiFetch<any>(`/courses/modules/${moduleId}/lessons`, { method: 'POST', body: JSON.stringify(data) }),
+  updateLesson: (lessonId: string, data: any) => apiFetch<any>(`/courses/lessons/${lessonId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteLesson: (lessonId: string) => apiFetch<any>(`/courses/lessons/${lessonId}`, { method: 'DELETE' }),
 };
 
 // ---------- Exams & Results API ----------
@@ -229,6 +255,10 @@ export const examApi = {
     apiFetch<any>('/exams/quizzes', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+  publishQuizResults: (id: string) =>
+    apiFetch<any>(`/exams/quizzes/${id}/publish-results`, {
+      method: 'POST',
     }),
 };
 
@@ -327,6 +357,102 @@ export const usersApi = {
   list: (role?: string) => apiFetch<any[]>(role ? `/users/?role=${role}` : '/users/'),
   delete: (id: string) => apiFetch<any>(`/users/${id}`, { method: 'DELETE' }),
   update: (id: string, data: any) => apiFetch<any>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  provisionStudent: (data: {
+    name: string;
+    register_no: string;
+    email: string;
+    department: string;
+    semester: number;
+    section: string;
+  }) => apiFetch<{
+    message: string;
+    login_id: string;
+    temp_password: string;
+    user: any;
+  }>('/users/student', { method: 'POST', body: JSON.stringify(data) }),
+  provisionFaculty: (data: {
+    name: string;
+    email: string;
+    department: string;
+    designation?: string;
+    phone?: string;
+  }) => apiFetch<{
+    message: string;
+    login_id: string;
+    temp_password: string;
+    user: any;
+  }>('/users/faculty', { method: 'POST', body: JSON.stringify(data) }),
+  provisionAdmin: (data: {
+    name: string;
+    email: string;
+    department?: string;
+    phone?: string;
+  }) => apiFetch<{
+    message: string;
+    login_id: string;
+    temp_password: string;
+    user: any;
+  }>('/users/admin', { method: 'POST', body: JSON.stringify(data) }),
+  updateStatus: (id: string, is_active: boolean) =>
+    apiFetch<any>(`/users/${id}/status`, { method: 'PATCH', body: JSON.stringify({ is_active }) }),
+  resetPassword: (id: string) =>
+    apiFetch<{
+      message: string;
+      user_id: string;
+      login_id: string;
+      temp_password: string;
+    }>(`/users/${id}/reset-password`, { method: 'POST' }),
+  exportData: (id: string) => apiFetch<any>(`/users/${id}/export-data`),
+  purgeData: (id: string, reason: string) =>
+    apiFetch<any>(`/users/${id}/purge-data`, {
+      method: 'POST',
+      body: JSON.stringify({ reason, confirm: true }),
+    }),
+  bulkPreview: async (file: File) => {
+    const token = getAccessToken();
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/users/bulk-preview`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to parse preview file' }));
+      throw new Error(err.detail || 'Preview failed');
+    }
+    return res.json() as Promise<{
+      total_rows: number;
+      valid_count: number;
+      invalid_count: number;
+      preview: Array<{
+        row: number;
+        name: string;
+        register_no: string;
+        email: string;
+        department: string;
+        semester: number;
+        section: string;
+        valid: boolean;
+        errors: string[];
+      }>;
+    }>;
+  },
+  bulkImport: async (file: File) => {
+    const token = getAccessToken();
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/users/bulk-import`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to import student accounts' }));
+      throw new Error(err.detail || 'Import failed');
+    }
+    return res.blob();
+  },
   changePassword: (data: any) => apiFetch<any>('/users/change-password', { method: 'POST', body: JSON.stringify(data) }),
 };
 
@@ -341,6 +467,7 @@ export const assignmentsApi = {
   create: (data: any) => apiFetch<any>('/assignments/', { method: 'POST', body: JSON.stringify(data) }),
   listSubmissions: () => apiFetch<any[]>('/assignments/submissions'),
   gradeSubmission: (id: string, data: any) => apiFetch<any>(`/assignments/submissions/${id}/grade`, { method: 'POST', body: JSON.stringify(data) }),
+  publishResults: (id: string) => apiFetch<any>(`/assignments/${id}/publish-results`, { method: 'POST' }),
 };
 
 // ---------- System API ----------
@@ -393,6 +520,16 @@ export const certificatesApi = {
     }),
   revokeCertificate: (certId: string) =>
     apiFetch<any>(`/certificates/revoke/${certId}`, { method: 'POST' }),
+  issueCertificate: (courseId: string, studentId?: string) =>
+    apiFetch<any>('/certificates/issue', {
+      method: 'POST',
+      body: JSON.stringify({ course_id: courseId, student_id: studentId }),
+    }),
+  overrideCertificate: (studentId: string, courseId: string, reason: string) =>
+    apiFetch<any>('/certificates/override', {
+      method: 'POST',
+      body: JSON.stringify({ student_id: studentId, course_id: courseId, reason }),
+    }),
   verify: async (code: string) => {
     const res = await fetch(`/api/certificates/verify/${encodeURIComponent(code)}`);
     if (!res.ok) {
@@ -505,6 +642,92 @@ export const notificationsApi = {
   list: (limit = 50) => apiFetch<{ unread_count: number; notifications: AppNotification[] }>(`/notifications?limit=${limit}`),
   markRead: (id: string) => apiFetch<{ message: string; notification: AppNotification; unread_count: number }>(`/notifications/${id}/read`, { method: 'POST' }),
   markAllRead: () => apiFetch<{ message: string; unread_count: number }>(`/notifications/read-all`, { method: 'POST' })
+};
+
+// ─── UNIFIED ACADEMIC METRICS API (server/services/metrics.py) ───
+export interface AcademicAttendanceMetric {
+  course_id?: string;
+  student_id?: string;
+  attended: number;
+  held: number;
+  pct: number | null;
+  status: string;
+  is_low: boolean;
+}
+
+export interface AcademicAssessmentMetric {
+  course_id?: string;
+  student_id?: string;
+  pct: number | null;
+  score: number | null;
+  graded_count: number;
+  pending_count: number;
+  total_items: number;
+}
+
+export interface AcademicProgressMetric {
+  course_id?: string;
+  student_id?: string;
+  completed: number;
+  total: number;
+  pct: number | null;
+}
+
+export interface CourseMetricItem {
+  course_id: string;
+  course_code: string;
+  course_name: string;
+  credits: number;
+  faculty_name: string;
+  attendance: AcademicAttendanceMetric;
+  assessment: AcademicAssessmentMetric;
+  progress: AcademicProgressMetric;
+  certificate: {
+    eligible: boolean;
+    is_issued: boolean;
+    certificate_code?: string | null;
+    reasons: string[];
+    attendance_ok: boolean;
+    assessment_ok: boolean;
+    progress_ok: boolean;
+    policy?: {
+      min_attendance_pct: number;
+      min_assessment_pct: number;
+      min_progress_pct: number;
+    };
+  };
+}
+
+export interface StudentSummaryResponse {
+  user_id: string;
+  name: string;
+  email: string;
+  role: string;
+  overall_attendance: {
+    attended: number;
+    held: number;
+    pct: number | null;
+    is_low: boolean;
+    courses_count: number;
+    formula: string;
+  };
+  overall_assessment_pct: number | null;
+  overall_progress_pct: number | null;
+  courses_count: number;
+  courses: CourseMetricItem[];
+}
+
+export const meApi = {
+  summary: () => apiFetch<StudentSummaryResponse>('/me/summary'),
+  courseMetrics: (courseId: string) => apiFetch<CourseMetricItem>(`/me/courses/${courseId}/metrics`),
+};
+
+export const facultyApi = {
+  courseMetrics: (courseId: string) => apiFetch<any>(`/faculty/courses/${courseId}/metrics`),
+};
+
+export const adminApi = {
+  overview: () => apiFetch<any>('/admin/overview'),
 };
 
 

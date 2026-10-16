@@ -41,18 +41,18 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ role }) => {
     setLoading(false);
   };
 
-  const samplePrompts = {
+  const suggestedPrompts = {
     [UserRole.STUDENT]: [
-      "What is my attendance in Cloud Computing?",
+      "What is my attendance in my enrolled courses?",
       "When is my next exam?",
-      "Suggest some placement tips for Google.",
+      "Suggest some placement tips.",
       "Summarize my GPA progress."
     ],
     [UserRole.FACULTY]: [
-      "Show my grading summary for CS8701.",
+      "Show my grading summary for my assigned courses.",
       "What is my timetable for tomorrow?",
       "Who are the top performers in my class?",
-      "Generate a lesson plan for Unit 3."
+      "Generate a lesson plan."
     ],
     [UserRole.ADMIN]: [
       "Show institutional revenue this month.",
@@ -103,7 +103,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ role }) => {
               <div className="pt-4 space-y-3">
                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Quick Actions</p>
                 <div className="flex flex-wrap gap-2">
-                  {samplePrompts[role]?.map((prompt, i) => (
+                  {suggestedPrompts[role]?.map((prompt, i) => (
                     <button
                       key={i}
                       onClick={() => { setInput(prompt); }}

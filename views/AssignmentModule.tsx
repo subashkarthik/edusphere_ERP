@@ -24,6 +24,7 @@ interface AssignmentItem {
   submission_id: string | null;
   marks_obtained: number | null;
   feedback: string | null;
+  is_results_published?: boolean;
 }
 
 interface SubmissionItem {
@@ -420,9 +421,29 @@ const AssignmentModule: React.FC<{ role: UserRole }> = ({ role }) => {
                               <Upload size={16} /> Submit Work
                             </button>
                           ) : (
-                            <span className="px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-xs font-bold text-indigo-300 uppercase">
-                              Active
-                            </span>
+                            <div className="flex flex-col items-end gap-2">
+                              {a.is_results_published ? (
+                                <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-lg text-[10px] font-black uppercase tracking-wider">
+                                  Results Published
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      await assignmentsApi.publishResults(a.id);
+                                      setToast({ message: `Results published for "${a.title}". Marks are now visible to students.`, type: 'success' });
+                                      loadAssignments();
+                                    } catch (err: any) {
+                                      setToast({ message: err.message || 'Failed to publish results.', type: 'error' });
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-md active:scale-95 transition-all"
+                                  title="Publish graded marks to enrolled students"
+                                >
+                                  Publish Results
+                                </button>
+                              )}
+                            </div>
                           )
                         ) : a.status === 'SUBMITTED' ? (
                           <div className="flex flex-col items-end">

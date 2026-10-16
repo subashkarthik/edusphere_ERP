@@ -6,8 +6,8 @@ EduSphere LMS — High-performance Student Learning Management System.
 Run:
     uvicorn main:app --reload --port 5000
     
-Seed Database:
-    python -m utils.seed
+Bootstrap Admin:
+    python -m app.cli create-admin --email <email> --name <name>
 """
 import sys
 import os
@@ -65,6 +65,7 @@ from routes.certificates import router as certificates_router
 from routes.upload import router as upload_router
 from routes.reports import router as reports_router
 from routes.notifications import router as notifications_router
+from routes.metrics import router as metrics_router
 
 # Import middleware
 
@@ -77,6 +78,67 @@ from middleware.logging import RequestLoggingMiddleware
 async def lifespan(app):
     # Ensure database schema tables are created
     Base.metadata.create_all(bind=engine)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TYPE attendancestatus ADD VALUE IF NOT EXISTS 'OD'"))
+            conn.commit()
+    except Exception:
+        pass
+
+    try:
+        with engine.connect() as conn:
+            try:
+                conn.execute(text("ALTER TABLE courses ALTER COLUMN department_id DROP NOT NULL"))
+                conn.commit()
+            except Exception:
+                pass
+            try:
+                conn.execute(text("ALTER TABLE courses ADD COLUMN syllabus_topics JSON DEFAULT '[]'"))
+                conn.commit()
+            except Exception:
+                pass
+            try:
+                conn.execute(text("ALTER TABLE modules ADD COLUMN is_published BOOLEAN DEFAULT TRUE"))
+                conn.commit()
+            except Exception:
+                pass
+            try:
+                conn.execute(text("ALTER TABLE lessons ADD COLUMN is_published BOOLEAN DEFAULT TRUE"))
+                conn.commit()
+            except Exception:
+                pass
+            try:
+                conn.execute(text("ALTER TABLE certificates ADD COLUMN IF NOT EXISTS is_override BOOLEAN DEFAULT FALSE"))
+                conn.commit()
+            except Exception:
+                pass
+            try:
+                conn.execute(text("ALTER TABLE certificates ADD COLUMN IF NOT EXISTS override_reason VARCHAR(500)"))
+                conn.commit()
+            except Exception:
+                pass
+            try:
+                conn.execute(text("ALTER TABLE certificates ADD COLUMN IF NOT EXISTS override_by_id VARCHAR(36)"))
+                conn.commit()
+            except Exception:
+                pass
+            try:
+                conn.execute(text("ALTER TABLE assignments ADD COLUMN IF NOT EXISTS is_results_published BOOLEAN DEFAULT FALSE"))
+                conn.commit()
+            except Exception:
+                pass
+            try:
+                conn.execute(text("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS is_results_published BOOLEAN DEFAULT FALSE"))
+                conn.commit()
+            except Exception:
+                pass
+            try:
+                conn.execute(text("ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS period VARCHAR(50)"))
+                conn.commit()
+            except Exception:
+                pass
+    except Exception:
+        pass
 
     # Initialize Redis for WebSockets if available
     try:
@@ -84,6 +146,21 @@ async def lifespan(app):
         await manager.initialize_redis()
     except Exception as e:
         print(f"[LIFESPAN] Redis init skipped: {e}")
+
+    # Auto-seed demo accounts if missing
+    try:
+        from database import SessionLocal
+        from models.user import User
+        _db = SessionLocal()
+        _admin = _db.query(User).filter(User.email == "admin@eslms.online").first()
+        _cnt = _db.query(User).count()
+        _db.close()
+        if not _admin or _cnt < 16:
+            print("[AUTO-SEED] Seeding demo database (1 Admin, 5 Faculty, 10 Students)...")
+            from scripts.seed_production_demo import seed
+            seed()
+    except Exception as _e:
+        print(f"[AUTO-SEED] Note: {_e}")
 
     print("[OK] EduSphere LMS API server started")
     print("[DOCS] API Docs: http://localhost:5000/api/docs")
@@ -165,6 +242,7 @@ app.include_router(certificates_router)
 app.include_router(upload_router)
 app.include_router(reports_router)
 app.include_router(notifications_router)
+app.include_router(metrics_router)
 
 from routes.public import router as public_router
 app.include_router(public_router)
@@ -212,33 +290,20 @@ def health_check():
 # ─── DB HEALTH CHECK ───
 @app.get("/api/health/db", tags=["System"])
 def db_health_check():
-    """Test connectivity to all database backends (SQLite + MS Access)."""
-    results = {"sqlite": "unknown", "access": "unknown"}
+    """Test connectivity to primary database backend."""
+    results = {"database": "unknown"}
 
-    # Test SQLite
+    # Test Primary DB
     try:
         from database import SessionLocal
         db = SessionLocal()
         db.execute(text("SELECT 1"))
         db.close()
-        results["sqlite"] = "connected"
+        results["database"] = "connected"
     except Exception as e:
-        results["sqlite"] = f"error: {e}"
+        results["database"] = f"error: {e}"
 
-    # Test MS Access
-    try:
-        from access_db import check_access_health
-        access_status = check_access_health()
-        results["access"] = access_status
-    except ImportError:
-        results["access"] = "module not available"
-    except Exception as e:
-        results["access"] = f"error: {e}"
-
-    overall = "healthy" if all(
-        v in ("connected", "healthy") or "connected" in str(v)
-        for v in results.values()
-    ) else "degraded"
+    overall = "healthy" if results.get("database") == "connected" else "degraded"
 
     return {
         "status": overall,
@@ -257,6 +322,10 @@ if not os.path.exists(dist_path):
 
 assets_path = os.path.join(dist_path, "assets")
 index_file = os.path.join(dist_path, "index.html")
+
+uploads_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "storage", "uploads")
+os.makedirs(uploads_path, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=uploads_path), name="uploads")
 
 if os.path.exists(assets_path):
     app.mount("/assets", StaticFiles(directory=assets_path), name="static_assets")

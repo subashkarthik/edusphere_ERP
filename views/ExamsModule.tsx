@@ -460,11 +460,24 @@ export const ExamsModule: React.FC<ModuleProps> = ({ role }) => {
                           hasAttempted ? (
                             <span
                               className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${
-                                passed ? 'badge-emerald text-emerald-300' : 'badge-rose text-rose-300'
+                                !quiz.is_results_published
+                                  ? 'badge-indigo text-indigo-300'
+                                  : passed
+                                  ? 'badge-emerald text-emerald-300'
+                                  : 'badge-rose text-rose-300'
                               }`}
                             >
-                              {passed ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-                              {passed ? `Score: ${quiz.best_score} (${quiz.percentage}%)` : `Failed (${quiz.percentage}%)`}
+                              {!quiz.is_results_published ? (
+                                <>
+                                  <CheckCircle2 size={12} />
+                                  Submitted (Awaiting Results)
+                                </>
+                              ) : (
+                                <>
+                                  {passed ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+                                  {passed ? `Score: ${quiz.best_score} (${quiz.percentage}%)` : `Failed (${quiz.percentage}%)`}
+                                </>
+                              )}
                             </span>
                           ) : (
                             <span className="badge-amber text-amber-300 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest">
@@ -474,9 +487,20 @@ export const ExamsModule: React.FC<ModuleProps> = ({ role }) => {
                         )}
 
                         {isFacultyOrAdmin && (
-                          <span className="text-[10px] font-mono font-bold text-slate-400 bg-white/[0.04] px-2.5 py-1 rounded-lg border border-white/[0.08]">
-                            {quiz.attempts_count} {quiz.attempts_count === 1 ? 'Attempt' : 'Attempts'}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            {quiz.is_results_published ? (
+                              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-lg">
+                                Results Published
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-black uppercase tracking-wider text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-lg">
+                                Unpublished
+                              </span>
+                            )}
+                            <span className="text-[10px] font-mono font-bold text-slate-400 bg-white/[0.04] px-2.5 py-1 rounded-lg border border-white/[0.08]">
+                              {quiz.attempts_count} {quiz.attempts_count === 1 ? 'Attempt' : 'Attempts'}
+                            </span>
+                          </div>
                         )}
                       </div>
 
@@ -513,20 +537,37 @@ export const ExamsModule: React.FC<ModuleProps> = ({ role }) => {
                       )}
 
                       {isFacultyOrAdmin && (
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleViewAttempts(quiz.id)}
-                            className="flex-1 py-2.5 glass-btn rounded-xl text-xs font-bold text-indigo-300 hover:text-white uppercase tracking-wider flex items-center justify-center gap-1.5"
-                          >
-                            <BarChart3 size={14} /> View Results
-                          </button>
-                          <button
-                            onClick={() => startQuiz(quiz.id)}
-                            className="py-2.5 px-4 glass-btn rounded-xl text-xs font-bold text-slate-400 hover:text-slate-200"
-                            title="Preview Quiz"
-                          >
-                            Preview
-                          </button>
+                        <div className="space-y-2">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleViewAttempts(quiz.id)}
+                              className="flex-1 py-2.5 glass-btn rounded-xl text-xs font-bold text-indigo-300 hover:text-white uppercase tracking-wider flex items-center justify-center gap-1.5"
+                            >
+                              <BarChart3 size={14} /> View Results
+                            </button>
+                            <button
+                              onClick={() => startQuiz(quiz.id)}
+                              className="py-2.5 px-4 glass-btn rounded-xl text-xs font-bold text-slate-400 hover:text-slate-200"
+                              title="Preview Quiz"
+                            >
+                              Preview
+                            </button>
+                          </div>
+                          {!quiz.is_results_published && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await examApi.publishQuizResults(quiz.id);
+                                  loadQuizzes();
+                                } catch (err: any) {
+                                  alert(err.message || 'Failed to publish quiz results');
+                                }
+                              }}
+                              className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-md transition-all active:scale-95"
+                            >
+                              Publish Results to Students
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>

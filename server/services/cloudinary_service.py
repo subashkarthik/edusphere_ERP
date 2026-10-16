@@ -10,8 +10,8 @@ from config import settings
 
 logger = logging.getLogger("CloudinaryService")
 
-# Default High-Quality Cloudinary Educational Sample Videos (CDN Streaming URLs)
-DEFAULT_CLOUDINARY_VIDEOS = {
+# Cloudinary Educational Video Stream Registry (CDN Streaming URLs)
+CLOUDINARY_MEDIA_REGISTRY = {
     "computer_science": [
         "https://res.cloudinary.com/ducisa7vu/video/upload/v1785711172/vidssave.com_1__Getting_Started_with_C_Programming_2025___C_Programming_for_Beginners_1080P_p4zh7l.mp4",
         "https://res.cloudinary.com/ducisa7vu/video/upload/v1785711662/vidssave.com_2__C_Variables_and_Print_Output___2025_C_Programming_for_Beginners_1080P_zvbax2.mp4",
@@ -34,7 +34,7 @@ def get_cloudinary_video_url(category: str, filename: str) -> str:
     """
     Returns secure Cloudinary CDN HTTPS URL for course video playback.
     If Cloudinary API credentials are set in .env, uses uploaded Cloudinary asset URL.
-    Otherwise uses high-performance Cloudinary Demo CDN stream.
+    Otherwise uses Cloudinary CDN stream.
     """
     cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME")
     if cloud_name and cloud_name != "your_cloud_name":
@@ -42,9 +42,8 @@ def get_cloudinary_video_url(category: str, filename: str) -> str:
         clean_name = filename.replace(".mp4", "").replace(" ", "_")
         return f"https://res.cloudinary.com/{cloud_name}/video/upload/v1/edusphere/{category}/{clean_name}.mp4"
 
-    # Default Cloudinary Sample CDN fallback
     cat_key = category.lower().replace(" ", "_")
-    video_list = DEFAULT_CLOUDINARY_VIDEOS.get(cat_key, DEFAULT_CLOUDINARY_VIDEOS["computer_science"])
+    video_list = CLOUDINARY_MEDIA_REGISTRY.get(cat_key, CLOUDINARY_MEDIA_REGISTRY["computer_science"])
     return video_list[0]
 
 def upload_file_to_cloudinary(local_path: str, public_id: str) -> str:

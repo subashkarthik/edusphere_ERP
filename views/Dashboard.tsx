@@ -18,19 +18,21 @@ const StudentIntelligenceDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<{
     enrolled_courses_count: number;
-    overall_attendance_pct: number;
-    average_assessment_score: number;
+    overall_attendance_pct: number | null;
+    average_assessment_score: number | null;
     certificates_earned_count: number;
     courses: any[];
+    at_risk_courses: any[];
     upcoming_quizzes: any[];
     upcoming_assignments: any[];
     earned_certificates: any[];
   }>({
     enrolled_courses_count: 0,
-    overall_attendance_pct: 0,
-    average_assessment_score: 0,
+    overall_attendance_pct: null,
+    average_assessment_score: null,
     certificates_earned_count: 0,
     courses: [],
+    at_risk_courses: [],
     upcoming_quizzes: [],
     upcoming_assignments: [],
     earned_certificates: []
@@ -75,8 +77,10 @@ const StudentIntelligenceDashboard: React.FC = () => {
     }
   };
 
-  const isAttendanceGood = data.overall_attendance_pct >= 75;
-  const isAssessmentGood = data.average_assessment_score >= 50;
+  const hasSessions = data.overall_attendance_pct !== null && data.overall_attendance_pct !== undefined;
+  const isAttendanceGood = hasSessions && data.overall_attendance_pct! >= 75;
+  const hasAssessments = data.average_assessment_score !== null && data.average_assessment_score !== undefined;
+  const isAssessmentGood = hasAssessments && data.average_assessment_score! >= 50;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 font-sans pb-12">
@@ -107,6 +111,54 @@ const StudentIntelligenceDashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* "At Risk" Warning Banner when any course attendance < policy minimum */}
+      {data.at_risk_courses && data.at_risk_courses.length > 0 && (
+        <div className="p-6 rounded-3xl bg-rose-500/10 border-2 border-rose-500/40 shadow-xl shadow-rose-950/40 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-rose-500/20 text-rose-400 rounded-2xl shrink-0">
+              <AlertTriangle size={24} />
+            </div>
+            <div>
+              <h2 className="text-base font-black text-white tracking-tight flex items-center gap-2">
+                Academic Attendance Warning: <span className="text-rose-400">{data.at_risk_courses.length} Course{data.at_risk_courses.length !== 1 ? 's' : ''} Below Minimum Threshold</span>
+              </h2>
+              <p className="text-xs text-rose-200/80 font-medium mt-0.5">
+                Institutional policy requires minimum attendance to remain eligible for examinations and course certification.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+            {data.at_risk_courses.map((arc: any) => (
+              <div key={arc.course_id} className="p-4 bg-black/60 border border-rose-500/30 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="px-2 py-0.5 bg-rose-500/20 text-rose-300 font-mono font-bold text-xs rounded-md">
+                    {arc.course_code}
+                  </span>
+                  <span className="text-xs font-black text-rose-400">
+                    {arc.current_pct}% (Policy Min: {arc.policy_min_pct}%)
+                  </span>
+                </div>
+                <div className="text-sm font-bold text-white leading-snug">{arc.course_name}</div>
+                <div className="text-xs text-slate-400">Faculty: {arc.faculty_name}</div>
+                <div className="p-2.5 bg-rose-950/30 border border-rose-500/20 rounded-xl space-y-1 text-xs">
+                  <div className="text-rose-300 font-bold flex items-center justify-between">
+                    <span>Consecutive Classes Needed:</span>
+                    <span className="font-mono text-white text-sm bg-rose-500/30 px-2 py-0.5 rounded-lg">
+                      {arc.classes_needed_to_recover} classes
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-mono pt-1">
+                    <span className="text-slate-300 font-bold">Formula: </span>
+                    {arc.formula_explanation || `⌈(${arc.policy_min_pct}% × ${arc.classes_held} - 100 × ${arc.classes_attended}) / (100 - ${arc.policy_min_pct}%)⌉`}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 4 Core Real KPI Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* 1. Enrolled Courses */}
@@ -126,16 +178,16 @@ const StudentIntelligenceDashboard: React.FC = () => {
         {/* 2. Overall Attendance */}
         <div className="glass-panel p-5 rounded-3xl border border-white/10 space-y-3">
           <div className="flex items-center justify-between">
-            <div className={`p-3 rounded-2xl ${isAttendanceGood ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400'}`}>
+            <div className={`p-3 rounded-2xl ${!hasSessions ? 'bg-slate-500/15 text-slate-400' : isAttendanceGood ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400'}`}>
               <Activity size={20} />
             </div>
-            <span className={`text-[10px] font-black uppercase tracking-wider ${isAttendanceGood ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {isAttendanceGood ? 'Above 75% ✔' : 'Below 75% ✘'}
+            <span className={`text-[10px] font-black uppercase tracking-wider ${!hasSessions ? 'text-slate-400' : isAttendanceGood ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {!hasSessions ? 'No Sessions' : isAttendanceGood ? 'Above 75% ✔' : 'Below 75% ✘'}
             </span>
           </div>
           <div>
-            <div className={`text-2xl font-black ${isAttendanceGood ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {data.overall_attendance_pct}%
+            <div className={`text-2xl font-black ${!hasSessions ? 'text-slate-400 text-lg' : isAttendanceGood ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {hasSessions ? `${data.overall_attendance_pct}%` : '0% (No classes held yet)'}
             </div>
             <div className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Overall Attendance</div>
           </div>
@@ -144,15 +196,17 @@ const StudentIntelligenceDashboard: React.FC = () => {
         {/* 3. Average Assessment */}
         <div className="glass-panel p-5 rounded-3xl border border-white/10 space-y-3">
           <div className="flex items-center justify-between">
-            <div className={`p-3 rounded-2xl ${isAssessmentGood ? 'bg-purple-500/15 text-purple-400' : 'bg-amber-500/15 text-amber-400'}`}>
+            <div className={`p-3 rounded-2xl ${!hasAssessments ? 'bg-slate-500/15 text-slate-400' : isAssessmentGood ? 'bg-purple-500/15 text-purple-400' : 'bg-amber-500/15 text-amber-400'}`}>
               <BrainCircuit size={20} />
             </div>
-            <span className={`text-[10px] font-black uppercase tracking-wider ${isAssessmentGood ? 'text-purple-400' : 'text-amber-400'}`}>
-              {isAssessmentGood ? 'Passed (&ge;50%)' : 'Pending (&lt;50%)'}
+            <span className={`text-[10px] font-black uppercase tracking-wider ${!hasAssessments ? 'text-slate-400' : isAssessmentGood ? 'text-purple-400' : 'text-amber-400'}`}>
+              {!hasAssessments ? 'Pending' : isAssessmentGood ? 'Passed (≥50%)' : 'Pending (<50%)'}
             </span>
           </div>
           <div>
-            <div className="text-2xl font-black text-white">{data.average_assessment_score}%</div>
+            <div className={`text-2xl font-black ${!hasAssessments ? 'text-slate-400 text-lg' : 'text-white'}`}>
+              {hasAssessments ? `${data.average_assessment_score}%` : '0% (No assessments yet)'}
+            </div>
             <div className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Assessment Average</div>
           </div>
         </div>
@@ -184,29 +238,36 @@ const StudentIntelligenceDashboard: React.FC = () => {
         </div>
 
         {data.courses.length === 0 ? (
-          <div className="glass-panel p-10 rounded-3xl text-center space-y-3 border border-white/10">
-            <BookOpen size={36} className="mx-auto text-slate-500" />
-            <h3 className="text-base font-black text-white">No Enrolled Courses Yet</h3>
-            <p className="text-xs text-slate-400 max-w-sm mx-auto">
-              You are not currently enrolled in any academic courses. Browse the Course Catalog to self-enroll and start tracking attendance, quizzes, and certificates.
+          <div className="glass-panel p-12 rounded-3xl text-center space-y-3 border border-white/10">
+            <BookOpen size={40} className="mx-auto text-slate-500" />
+            <h3 className="text-base font-black text-white">No Enrolled Courses</h3>
+            <p className="text-sm text-slate-300 max-w-md mx-auto">
+              You are not enrolled in any course yet. Contact your department office.
             </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {data.courses.map((course) => {
-              const attnGood = course.attendance_pct >= 75;
-              const assessGood = course.assessment_pct >= 50;
-              const progGood = course.progress_pct >= 100;
+              const hasCourseSessions = course.attendance_pct !== null && course.attendance_pct !== undefined;
+              const attnGood = hasCourseSessions && course.attendance_pct >= (course.policy_min_pct || 75);
+              const hasCourseAssess = course.assessment_pct !== null && course.assessment_pct !== undefined;
+              const assessGood = hasCourseAssess && course.assessment_pct >= 50;
+              const progGood = course.progress_pct !== null && course.progress_pct !== undefined && course.progress_pct >= 100;
               const isIssued = course.certificate_status === 'ISSUED';
+              const isAtRisk = course.is_at_risk;
 
               return (
-                <div key={course.id} className="glass-panel p-5 rounded-3xl border border-white/10 space-y-4 hover:border-indigo-500/30 transition-all flex flex-col justify-between">
+                <div key={course.id} className={`glass-panel p-5 rounded-3xl border transition-all flex flex-col justify-between ${isAtRisk ? 'border-rose-500/40 bg-rose-950/10' : 'border-white/10 hover:border-indigo-500/30'}`}>
                   <div>
                     <div className="flex items-center justify-between gap-2">
                       <span className="px-2.5 py-0.5 bg-indigo-500/20 text-indigo-300 rounded-md text-[10px] font-mono font-bold uppercase">
                         {course.code}
                       </span>
-                      {isIssued ? (
+                      {isAtRisk ? (
+                        <span className="px-2.5 py-0.5 bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-full text-[9px] font-black uppercase flex items-center gap-1">
+                          <AlertTriangle size={10} /> At Risk
+                        </span>
+                      ) : isIssued ? (
                         <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full text-[9px] font-black uppercase">
                           Certified ✔
                         </span>
@@ -222,25 +283,36 @@ const StudentIntelligenceDashboard: React.FC = () => {
                   </div>
 
                   {/* Real Metrics Checklist */}
-                  <div className="p-3 bg-black/40 border border-white/5 rounded-2xl space-y-1.5 text-xs">
+                  <div className="p-3 bg-black/40 border border-white/5 rounded-2xl space-y-1.5 text-xs my-3">
                     <div className="flex items-center justify-between">
                       <span className="text-slate-400 text-[11px]">Attendance:</span>
-                      <span className={`font-mono font-bold text-[11px] ${attnGood ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {course.attendance_pct}% {attnGood ? '✔' : '✘'}
+                      <span className={`font-mono font-bold text-[11px] ${!hasCourseSessions ? 'text-slate-400' : attnGood ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {hasCourseSessions ? `${course.attendance_pct}% (${course.attended || 0}/${course.held || 0} classes) ${attnGood ? '✔' : '✘'}` : 'No classes held yet'}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-400 text-[11px]">Assessment:</span>
-                      <span className={`font-mono font-bold text-[11px] ${assessGood ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {course.assessment_pct}% {assessGood ? '✔' : '✘'}
+                      <span className={`font-mono font-bold text-[11px] ${!hasCourseAssess ? 'text-slate-400' : assessGood ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {hasCourseAssess ? `${course.assessment_pct}% ${assessGood ? '✔' : '✘'}` : 'Pending'}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-400 text-[11px]">Progress:</span>
-                      <span className={`font-mono font-bold text-[11px] ${progGood ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {course.progress_pct}% {progGood ? '✔' : '✘'}
+                      <span className={`font-mono font-bold text-[11px] ${progGood ? 'text-emerald-400' : 'text-slate-300'}`}>
+                        {course.progress_pct !== null && course.progress_pct !== undefined ? `${course.progress_pct}% ${progGood ? '✔' : '✘'}` : '0.0%'}
                       </span>
                     </div>
+
+                    {isAtRisk && (
+                      <div className="pt-2 border-t border-rose-500/20 text-[10px] space-y-0.5">
+                        <div className="text-rose-300 font-bold">
+                          Recover: {course.classes_needed_to_recover} consecutive classes needed
+                        </div>
+                        <div className="text-slate-400 font-mono text-[9px] leading-tight">
+                          {course.formula_explanation}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Footer Actions */}

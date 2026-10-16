@@ -27,6 +27,7 @@ const LearningJourney = React.lazy(() => import('./views/LearningJourney'));
 const LearningWorkspace = React.lazy(() => import('./views/LearningWorkspace'));
 const PublicCatalog = React.lazy(() => import('./views/PublicCatalog'));
 const CertificateVerification = React.lazy(() => import('./views/CertificateVerification'));
+const PrivacyNotice = React.lazy(() => import('./views/PrivacyNotice'));
 const Login = React.lazy(() => import('./components/Login').then(module => ({ default: module.Login })));
 
 const App: React.FC = () => {
@@ -95,7 +96,14 @@ const App: React.FC = () => {
           designation: backendUser.designation || undefined,
           phone: backendUser.phone || undefined,
           org_id: backendUser.org_id,
+          is_active: backendUser.is_active,
         });
+        if (backendUser.must_change_password) {
+          clearTokens();
+          setIsLoggedIn(false);
+          return;
+        }
+
         setCurrentRole(mappedRole);
         setIsLoggedIn(true);
       } catch (err) {
@@ -106,6 +114,16 @@ const App: React.FC = () => {
     };
 
     checkPersistedSession();
+
+    const handleSwitchTab = (e: any) => {
+      if (e.detail) {
+        setActiveTab(e.detail);
+      }
+    };
+    window.addEventListener('switch-tab', handleSwitchTab);
+    return () => {
+      window.removeEventListener('switch-tab', handleSwitchTab);
+    };
   }, []);
 
   const handleLogout = async () => {
@@ -148,6 +166,8 @@ const App: React.FC = () => {
           return <LearningWorkspace courseData={selectedCourse} onBack={() => setActiveTab('academics')} />;
         case 'settings':
           return <SettingsModule user={user} onUserUpdate={(updatedUser) => setUser(updatedUser)} />;
+        case 'privacy':
+          return <PrivacyNotice onBack={() => setActiveTab('dashboard')} />;
         default:
           return <Dashboard role={currentRole} />;
       }
@@ -163,6 +183,17 @@ const App: React.FC = () => {
   };
 
   if (showSplash) return <SplashScreen />;
+
+  if (window.location.pathname.startsWith('/privacy')) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <OfflineBanner />
+        <Suspense fallback={<FullPageLoader />}>
+          <PrivacyNotice onBack={() => { window.location.href = '/'; }} />
+        </Suspense>
+      </div>
+    );
+  }
 
   if (window.location.pathname.startsWith('/verify-certificate') || window.location.pathname.startsWith('/verify')) {
     return (
@@ -284,8 +315,6 @@ const App: React.FC = () => {
             <span className="text-[9px] font-black uppercase tracking-widest">Certs</span>
           </button>
         </nav>
-
-        <AIAssistant role={currentRole} />
         <LiveNotificationToast messages={toasts} onDismiss={dismissToast} />
       </div>
     </div>
